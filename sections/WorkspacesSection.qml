@@ -63,17 +63,19 @@ Ui.SectionBody {
         onRequested: function(next) { app.run(["workspaces", "set", cls, "silent", next ? "true" : "false"]) }
       }
 
-      Ui.SwitchRow {
-        label: "Floating"
-        description: "Opens as a free window rather than tiled into the layout."
-        checked: modelData.float === true
-        onRequested: function(next) { app.run(["workspaces", "set", cls, "float", next ? "true" : "false"]) }
-      }
-
-      Ui.SwitchRow {
-        label: "Fullscreen"
-        checked: modelData.fullscreen === true
-        onRequested: function(next) { app.run(["workspaces", "set", cls, "fullscreen", next ? "true" : "false"]) }
+      // One choice, not two switches: a fullscreen window is neither tiled nor
+      // floating in any way you can see, so offering both was offering a
+      // combination with no meaning.
+      Ui.ChoiceRow {
+        label: "Shown as"
+        description: "Floating opens a free window rather than one tiled into the layout."
+        options: [
+          { value: "tiled", label: "Tiled" },
+          { value: "floating", label: "Floating" },
+          { value: "fullscreen", label: "Fullscreen" }
+        ]
+        value: String(modelData.shown || "tiled")
+        onPicked: function(next) { app.run(["workspaces", "set", cls, "shown", next]) }
       }
 
       // A rule the user wrote lives in their file, which this page never

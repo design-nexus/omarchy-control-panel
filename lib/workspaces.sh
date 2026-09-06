@@ -126,6 +126,8 @@ workspaces_state() {
                      silent: ($o.silent // $t.silent // false),
                      float: ($o.float // $t.float // false),
                      fullscreen: ($o.fullscreen // $t.fullscreen // false),
+                     shown: (if ($o.fullscreen // $t.fullscreen) == true then "fullscreen"
+                             elif ($o.float // $t.float) == true then "floating" else "tiled" end),
                      ours: ($ours | has($c)),
                      theirs: ($t != {}) } ] }'
 }
@@ -143,14 +145,29 @@ workspace_set() {
     silent|float|fullscreen)
       [[ $value == true || $value == false ]] || die "'$value' is not true or false"
       json=$value ;;
+    # How the window shows: one of three, since a fullscreen window is neither
+    # tiled nor floating in any way you can see. Stored as the two Hyprland
+    # fields, never both at once.
+    shown)
+      case $value in
+        tiled) workspace_set "$class" float false; workspace_set "$class" fullscreen false; return 0 ;;
+        floating) workspace_set "$class" fullscreen false; workspace_set "$class" float true; return 0 ;;
+        fullscreen) workspace_set "$class" float false; workspace_set "$class" fullscreen true; return 0 ;;
+        *) die "'$value' is not tiled, floating or fullscreen" ;;
+      esac ;;
     *) die "unknown window setting '$field'" ;;
   esac
 
   # An empty workspace or a switch turned off is the absence of the rule, not
   # a rule saying so: `float = false` would pin a window tiled against the
   # user's own config, which is more than "off" promises.
+  # Turning one of float and fullscreen on turns the other off, so a rule can
+  # never ask for both.
   edit_store '.windowRules = ((.windowRules // {})
-    | .[$c] = ((.[$c] // {}) | if $v == "" or $v == false then del(.[$f]) else .[$f] = $v end))' \
+    | .[$c] = ((.[$c] // {})
+        | if $v == "" or $v == false then del(.[$f]) else .[$f] = $v end
+        | if $v == true and $f == "float" then del(.fullscreen)
+          elif $v == true and $f == "fullscreen" then del(.float) else . end))' \
     --arg c "$class" --arg f "$field" --argjson v "$json"
   hyprctl reload >/dev/null 2>&1 || true
 
@@ -207,6 +224,6 @@ workspaces_cmd() {
     add) workspace_add "${2:-}" ;;
     set) workspace_set "${2:-}" "${3:-}" "${4:-}" ;;
     remove) workspace_remove "${2:-}" ;;
-    *) die "usage: omasettings workspaces state | add <class> | set <class> workspace|silent|float|fullscreen <value> | remove <class>" ;;
+    *) die "usage: omasettings workspaces state | add <class> | set <class> workspace|silent|shown|float|fullscreen <value> | remove <class>" ;;
   esac
 }
