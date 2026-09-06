@@ -780,6 +780,14 @@ Item {
     return []
   }
 
+  // The commands whose slices name everything they can change. Only what has
+  // been checked: a workspace rule touches the store and Hyprland's window
+  // rules, and nothing else this window shows.
+  function slicesSuffice(args) {
+    if (!args || args.length === 0) return false
+    return String(args[0]) === "workspaces"
+  }
+
   // `set` is the one command that is many: what it touches is named by its
   // key. Every setting also carries whether it now differs from what it was,
   // which is why the changed list comes along with all of them.
@@ -876,8 +884,11 @@ Item {
       root.refreshSlices(root.slicesFor(root.lastArgs))
       // Theme and font switches ripple through other processes; re-reading a
       // beat later picks up settled values rather than mid-switch ones — and
-      // catches anything the slices above did not name.
-      settleTimer.restart()
+      // catches anything the slices above did not name. A command whose slice
+      // is the whole story skips it: the full read costs seconds under load,
+      // and landing after a second click it put the older value back on
+      // screen until its own settle read corrected it.
+      if (!root.slicesSuffice(root.lastArgs)) settleTimer.restart()
     }
   }
 

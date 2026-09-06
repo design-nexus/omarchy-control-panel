@@ -25,14 +25,25 @@
 # "slack", and a Hyprland regex is case-sensitive. A running window is the
 # truth, so where one is open under the same name in any case, its class is
 # the one kept.
-workspace_apps() {
-  local dirs=() dir live
+APPS_CACHE="${OMASETTINGS_APPS_CACHE:-${XDG_CACHE_HOME:-$HOME_DIR/.cache}/omarchy/omasettings/apps.json}"
+
+# The desktop entries, parsed once per change to their directories. A hundred
+# and sixty files are re-read on every state slice otherwise, and a slice is
+# what answers a click; the running windows are merged in fresh each time
+# since they are the cheap half and the half that changes.
+workspace_desktop_entries() {
+  local dirs=() dir stamp cached
   IFS=: read -ra dirs <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
   dirs=("${XDG_DATA_HOME:-$HOME/.local/share}" "${dirs[@]}")
 
-  live=$(capture hyprctl -j clients | jq -c '[.[] | .class] | map(select(. != "")) | unique' 2>/dev/null || echo '[]')
+  stamp=$(for dir in "${dirs[@]}"; do [[ -d $dir/applications ]] && stat -c '%n %Y' "$dir/applications"; done | md5sum | cut -c1-32)
+  if [[ -f $APPS_CACHE ]]; then
+    cached=$(jq -c --arg s "$stamp" 'select(.stamp == $s) | .entries' "$APPS_CACHE" 2>/dev/null)
+    [[ -n $cached ]] && { printf '%s\n' "$cached"; return 0; }
+  fi
 
-  {
+  local entries
+  entries=$({
     for dir in "${dirs[@]}"; do
       [[ -d $dir/applications ]] || continue
       # Only the [Desktop Entry] group: actions below it carry their own Name.
@@ -53,12 +64,23 @@ workspace_apps() {
           }
         }' "$dir"/applications/*.desktop 2>/dev/null
     done
-  } | jq -R -s -c --argjson live "$live" '
+  } | jq -R -s -c '
     # An entry name wins the first time it appears: XDG_DATA_HOME comes first,
     # so a local override shadows the packaged file the way the launcher does.
     [ split("\n")[] | select(. != "") | split("\t")
       | { name: .[0], class: .[1], file: .[2] } ]
-    | unique_by(.file)
+    | unique_by(.file)')
+  mkdir -p "$(dirname "$APPS_CACHE")" 2>/dev/null
+  jq -cn --arg s "$stamp" --argjson e "$entries" '{ stamp: $s, entries: $e }' >"$APPS_CACHE" 2>/dev/null
+  printf '%s\n' "$entries"
+}
+
+workspace_apps() {
+  local live entries
+  live=$(capture hyprctl -j clients | jq -c '[.[] | .class] | map(select(. != "")) | unique' 2>/dev/null || echo '[]')
+  entries=$(workspace_desktop_entries)
+  jq -cn --argjson live "$live" --argjson entries "$entries" '
+    $entries
     | (. as $entries
        | map(.class as $c
              | ($live | map(select(ascii_downcase == ($c | ascii_downcase))) | first) as $seen
@@ -71,6 +93,7 @@ workspace_apps() {
     | unique_by(.class)
     | sort_by(.name | ascii_downcase)'
 }
+
 
 # Their own o.window("<class>", { ... }) lines, one call per line, read from
 # every Lua under the Hyprland directory except ours. A match given as a table
@@ -309,11 +332,14 @@ workspace_set() {
     # fields, never both at once.
     shown)
       case $value in
-        tiled) workspace_set "$class" float false; workspace_set "$class" fullscreen false; return 0 ;;
-        floating) workspace_set "$class" fullscreen false; workspace_set "$class" float true; return 0 ;;
-        fullscreen) workspace_set "$class" float false; workspace_set "$class" fullscreen true; return 0 ;;
+        tiled) json='{}' ;;
+        floating) json='{"float":true}' ;;
+        fullscreen) json='{"fullscreen":true}' ;;
         *) die "'$value' is not tiled, floating or fullscreen" ;;
-      esac ;;
+      esac
+      workspace_write "$class" '.[$c] = ((.[$c] // {}) | del(.float) | del(.fullscreen) + $v
+        | if .float != true then del(.pin) | del(.placement) else . end)' --argjson v "$json"
+      return 0 ;;
     *) die "unknown window setting '$field'" ;;
   esac
 
@@ -322,20 +348,30 @@ workspace_set() {
   # user's own config, which is more than "off" promises.
   # Turning one of float and fullscreen on turns the other off, so a rule can
   # never ask for both.
-  edit_store '.windowRules = ((.windowRules // {})
-    | .[$c] = ((.[$c] // {})
+  # Pinning and placement only mean anything floating; a window that stops
+  # floating stops carrying them rather than keeping a promise Hyprland will
+  # ignore.
+  workspace_write "$class" '.[$c] = ((.[$c] // {})
         | if $v == "" or $v == false then del(.[$f]) else .[$f] = $v end
         | if $v == true and $f == "float" then del(.fullscreen)
           elif $v == true and $f == "fullscreen" then del(.float) else . end
-        # Pinning and placement only mean anything floating; a window that
-        # stops floating stops carrying them rather than keeping a promise
-        # Hyprland will ignore.
-        | if $f == "float" and $v != true then del(.pin) | del(.placement) else . end))' \
-    --arg c "$class" --arg f "$field" --argjson v "$json"
-  hyprctl reload >/dev/null 2>&1 || true
-
-  workspace_apply_live "$class"
+        | if $f == "float" and $v != true then del(.pin) | del(.placement) else . end)' \
+    --arg f "$field" --argjson v "$json"
   return 0
+}
+
+# One edit of a class's rule, then only what that edit needs: Hyprland is told
+# to reload when the rendered file actually changed — flipping a switch to the
+# value it already had is not a reason to re-run the whole config — and the
+# open windows are brought in line either way.
+workspace_write() {
+  local class=$1 filter=$2 before after
+  shift 2
+  before=$(md5sum <"$MANAGED_LUA" 2>/dev/null)
+  edit_store ".windowRules = ((.windowRules // {}) | $filter)" --arg c "$class" "$@"
+  after=$(md5sum <"$MANAGED_LUA" 2>/dev/null)
+  [[ $before != "$after" ]] && { hyprctl reload >/dev/null 2>&1 || true; }
+  workspace_apply_live "$class"
 }
 
 # A window rule applies to windows that open from now on. The ones already
