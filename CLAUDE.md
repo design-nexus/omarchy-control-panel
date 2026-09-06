@@ -5,7 +5,7 @@ scattered across `~/.config/omarchy/shell.json`, the Hyprland config, the
 per-application configs, and `~/.XCompose`.
 
 It runs inside `omarchy-shell` — a single long-lived Quickshell (QML) process
-that also draws the bar. There is no separate app: the bar widget loads the
+that also draws the bar. There is no separate app: the plugin's service loads the
 window on first use.
 
 ## Layout, and what each part may know
