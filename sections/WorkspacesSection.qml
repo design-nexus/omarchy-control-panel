@@ -82,7 +82,6 @@ Ui.SectionBody {
       // two dashes to delete is an easier way back than a backup.
       Ui.ActionRow {
         label: "Remove"
-        description: theirs ? "Your own config's line is commented out, so it can be brought back by hand." : ""
         buttonText: "Remove"
         onTriggered: app.run(["workspaces", "remove", cls])
       }
