@@ -194,6 +194,15 @@ Ui.SectionBody {
   }
 
   // ------------------------------------------------------------ workspaces
+  //
+  // A rule for the place, not for what opens there — a different kind of
+  // thing, so a line rather than only a heading marks where one ends.
+  Rectangle {
+    width: parent.width
+    height: 1
+    color: Ui.Palette.hairline
+  }
+
   Ui.SettingGroup {
     title: "Workspace settings"
     note: unsetWorkspaces.length === 0 ? "Every workspace is set up." : ""
