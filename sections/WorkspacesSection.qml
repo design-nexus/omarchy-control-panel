@@ -46,6 +46,28 @@ Ui.SectionBody {
   }
 
   // ---------------------------------------------------------- applications
+  // Each half opens with its heading and the way in, so the boundary between
+  // applications and workspaces is a heading rather than a guess.
+  Ui.SettingGroup {
+    title: "Applications"
+    note: unbound.length === 0 ? "Every application is bound already." : ""
+
+    Ui.PickerRow {
+      label: "Bind an application"
+      visible: unbound.length > 0
+      description: "Applications with a running window are listed by the class their windows actually report."
+      value: ""
+      searchable: true
+      options: [{ value: "", label: "Pick an application…" }].concat(unbound.map(function(entry) {
+        return {
+          value: String(entry.class),
+          label: String(entry.name) + (entry.running ? "  (running)" : "")
+        }
+      }))
+      onPicked: function(next) { if (next !== "") app.run(["workspaces", "add", next]) }
+    }
+  }
+
   //
   // Every bound application gets its own group, titled with its name, so what
   // a control writes is never in doubt: the rows under Slack are about Slack.
@@ -171,26 +193,22 @@ Ui.SectionBody {
     }
   }
 
+  // ------------------------------------------------------------ workspaces
   Ui.SettingGroup {
-    visible: unbound.length > 0
-    note: rules.length === 0 ? "Nothing bound yet. Pick an application to give it a workspace." : ""
+    title: "Workspace settings"
+    note: unsetWorkspaces.length === 0 ? "Every workspace is set up." : ""
 
     Ui.PickerRow {
-      label: "Bind an application"
-      description: "Applications with a running window are listed by the class their windows actually report."
+      label: "Set up a workspace"
+      visible: unsetWorkspaces.length > 0
+      description: "Its display, name, layout, and whether it stays when empty."
       value: ""
-      searchable: true
-      options: [{ value: "", label: "Pick an application…" }].concat(unbound.map(function(entry) {
-        return {
-          value: String(entry.class),
-          label: String(entry.name) + (entry.running ? "  (running)" : "")
-        }
+      options: [{ value: "", label: "Pick a workspace…" }].concat(unsetWorkspaces.map(function(id) {
+        return { value: id, label: "Workspace " + id }
       }))
-      onPicked: function(next) { if (next !== "") app.run(["workspaces", "add", next]) }
+      onPicked: function(next) { if (next !== "") app.run(["workspaces", "setup", "add", next]) }
     }
   }
-
-  // ------------------------------------------------------------ workspaces
   //
   // The place rather than what opens there. Only a workspace with something
   // set gets a group, so ten empty groups do not bury the applications above.
@@ -264,17 +282,4 @@ Ui.SectionBody {
     }
   }
 
-  Ui.SettingGroup {
-    visible: unsetWorkspaces.length > 0
-
-    Ui.PickerRow {
-      label: "Set up a workspace"
-      description: "Its display, name, layout, and whether it stays when empty."
-      value: ""
-      options: [{ value: "", label: "Pick a workspace…" }].concat(unsetWorkspaces.map(function(id) {
-        return { value: id, label: "Workspace " + id }
-      }))
-      onPicked: function(next) { if (next !== "") app.run(["workspaces", "setup", "add", next]) }
-    }
-  }
 }
