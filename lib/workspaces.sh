@@ -84,12 +84,13 @@ workspace_apps() {
     | (. as $entries
        | map(.class as $c
              | ($live | map(select(ascii_downcase == ($c | ascii_downcase))) | first) as $seen
-             | { name: .name, class: ($seen // $c), running: ($seen != null) })
+             | { name: .name, class: ($seen // $c), running: ($seen != null), desktop: (.file + ".desktop") })
        # A window with no desktop entry — a script, a flatpak with an odd id —
-       # is still something you might want on a workspace.
+       # is still something you might want on a workspace. It cannot be
+       # started at login from here, though: nothing says how to launch it.
        + [ $live[] as $c
            | select(($entries | map(.class | ascii_downcase) | index($c | ascii_downcase)) == null)
-           | { name: $c, class: $c, running: true } ])
+           | { name: $c, class: $c, running: true, desktop: "" } ])
     | unique_by(.class)
     | sort_by(.name | ascii_downcase)'
 }
@@ -131,6 +132,18 @@ workspace_config_rules() {
   printf '%s\n' "$out"
 }
 
+# Their own `o.launch_on_start("<id>.desktop")` lines, as the desktop ids they
+# name. Only a desktop id can be tied back to an application on the page; a
+# bare command is theirs to keep.
+workspace_config_autostart() {
+  local file
+  for file in "$HYPR_DIR"/*.lua; do
+    [[ -f $file ]] || continue
+    [[ $file == "$MANAGED_LUA" ]] && continue
+    sed -nE 's/^[[:space:]]*o\.launch_on_start\("([^"]+\.desktop)"\).*/\1/p' "$file" 2>/dev/null
+  done | jq -R -s -c '[ split("\n")[] | select(. != "") ]'
+}
+
 workspace_rules_ours() {
   jq -c '.windowRules // {}' <<<"$(read_store)"
 }
@@ -143,9 +156,16 @@ workspaces_state() {
   apps=$(workspace_apps)
   ours=$(workspace_rules_ours)
   theirs=$(workspace_config_rules)
-  jq -cn --argjson apps "$apps" --argjson ours "$ours" --argjson theirs "$theirs" '
+  local autostart
+  autostart=$(workspace_config_autostart)
+  jq -cn --argjson apps "$apps" --argjson ours "$ours" --argjson theirs "$theirs" --argjson autostart "$autostart" '
     def name_of($c): ($apps | map(select(.class == $c)) | first | .name) // $c;
-    (($ours | keys) + ($theirs | keys) | unique) as $classes
+    def desktop_of($c): ($apps | map(select(.class == $c)) | first | .desktop) // "";
+    # An application they start at login is on the page even with no window
+    # rule: it is a setting about that application, and this is its page.
+    (($ours | keys) + ($theirs | keys)
+     + [ $apps[] | .desktop as $d | select($d != "" and ($autostart | index($d)) != null) | .class ]
+     | unique) as $classes
     | { apps: $apps,
         rules: [ $classes[] as $c
                  | ($ours[$c] // {}) as $o | ($theirs[$c] // {}) as $t
@@ -165,8 +185,10 @@ workspaces_state() {
                      noInitialFocus: ($o.no_initial_focus // $t.no_initial_focus // false),
                      idleInhibit: ($o.idle_inhibit // $t.idle_inhibit // false),
                      noScreenShare: ($o.no_screen_share // $t.no_screen_share // false),
+                     desktop: desktop_of($c),
+                     autostart: ((($o.autostart // "") != "") or (desktop_of($c) != "" and ($autostart | index(desktop_of($c))) != null)),
                      ours: ($ours | has($c)),
-                     theirs: ($t != {}) } ],
+                     theirs: ($t != {} or (desktop_of($c) != "" and ($autostart | index(desktop_of($c))) != null)) } ],
         setups: $setups }' --argjson setups "$(workspace_setups_state)"
 }
 
@@ -332,6 +354,11 @@ workspace_set() {
     center)
       [[ $value == true || $value == false ]] || die "'$value' is not true or false"
       json=$value ;;
+    # Started at login by desktop id, which is what uwsm launches by; the
+    # value is the id so the render needs nothing but the store.
+    autostart)
+      [[ -z $value || $value =~ ^[A-Za-z0-9._@+-]+\.desktop$ ]] || die "'$value' is not a desktop entry"
+      json=$(jq -Rn --arg v "$value" '$v') ;;
     # How the window shows: one of three, since a fullscreen window is neither
     # tiled nor floating in any way you can see. Stored as the two Hyprland
     # fields, never both at once.
@@ -420,20 +447,22 @@ workspace_apply_live() {
 # that is read — and the file is checked with `luac -p` afterwards and put
 # back if the edit broke it.
 workspace_remove() {
-  local class=$1 file previous
+  local class=$1 file previous desktop
   [[ -n $class ]] || die "no application given"
+  desktop=$(workspace_apps | jq -r --arg c "$class" 'map(select(.class == $c)) | first | .desktop // ""')
   edit_store '.windowRules = ((.windowRules // {}) | del(.[$c]))' --arg c "$class"
 
   for file in "$HYPR_DIR"/*.lua; do
     [[ -f $file ]] || continue
     [[ $file == "$MANAGED_LUA" ]] && continue
-    read_file "$file" | grep -qE "^[[:space:]]*o\.window\(\"$(sed 's/[][\\.*^$|?+(){}]/\\&/g' <<<"$class")\"," || continue
+    read_file "$file" | grep -qE "^[[:space:]]*o\.window\(\"$(sed 's/[][\\.*^$|?+(){}]/\\&/g' <<<"$class")\",|^[[:space:]]*o\.launch_on_start\(\"$(sed 's/[][\\.*^$|?+(){}]/\\&/g' <<<"$desktop")\"\)" || continue
 
     previous=$(read_file "$file")
     backup_once "$file"
 
-    awk -v class="$class" '
-      index($0, "o.window(\"" class "\",") && $0 ~ /^[ \t]*o\.window\(/ {
+    awk -v class="$class" -v desktop="$desktop" '
+      (index($0, "o.window(\"" class "\",") && $0 ~ /^[ \t]*o\.window\(/) \
+      || (desktop != "" && index($0, "o.launch_on_start(\"" desktop "\")") && $0 ~ /^[ \t]*o\.launch_on_start\(/) {
         print "-- " $0
         print "-- ^ removed in OmaSettings; delete the dashes to bring it back."
         next
@@ -488,6 +517,11 @@ render_window_rules_lua() {
         (if $r.no_screen_share == true then "no_screen_share = true" else empty end) ] as $fields
     | select(($fields | length) > 0)
     | "o.window(\"" + .key + "\", { " + ($fields | join(", ")) + " })"' <<<"$rules"
+
+  # Omarchy'"'"'s own helper, so the line reads like the one its autostart.lua
+  # suggests writing, and launches through uwsm the way the launcher does.
+  jq -r 'to_entries[] | select((.value.autostart // "") != "")
+    | "o.launch_on_start(\"" + .value.autostart + "\")"' <<<"$rules"
 }
 
 workspaces_cmd() {

@@ -99,6 +99,14 @@ Effects page's, per application in Lua only, and groups and tags are left
 alone. Pinned and placement only mean anything floating, so turning floating
 off drops both rather than keeping a promise Hyprland ignores.
 
+**Autostart is a desktop id, not a command.** "Start when you log in" writes
+`o.launch_on_start("slack.desktop")` — Omarchy's own helper, launching through
+uwsm by desktop entry id the way the launcher does — so the switch exists only
+for an application with a desktop entry; a bare window class has no command
+to start. Their own `o.launch_on_start("<id>.desktop")` lines are read, put
+the application on the page, and are commented out on Remove with its window
+rule. A bare command in their autostart is theirs to keep.
+
 **Workspaces themselves are the second half of the page.** `.workspaceRules`
 renders as `hl.workspace_rule({ workspace = "3", ... })`: display, default on
 that display, persistent, default name, layout, and one "borderless" switch

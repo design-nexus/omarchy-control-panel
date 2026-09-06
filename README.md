@@ -11,8 +11,8 @@ One window for every Omarchy setting, from Hyprland to your keybindings to tmux.
 - **The bar.** Position, transparency, which widgets sit where, and which
   plugins are enabled, plus add, remove and update them.
 - **Workspaces.** Bind an application to a workspace or a display, open it
-  there in the background, floating, pinned or fullscreen, keep the screen awake
-  or hide it from screen sharing. And set up the workspaces themselves: name,
+  there in the background, floating, pinned or fullscreen, start it when you
+  log in, keep the screen awake or hide it from screen sharing. And set up the workspaces themselves: name,
   display, layout, kept when empty, borderless.
 - **Keybindings.** Browse every binding you have, add your own, turn Omarchy's
   off, put them back. No Lua.

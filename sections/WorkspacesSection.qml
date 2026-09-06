@@ -163,6 +163,15 @@ Ui.SectionBody {
         onRequested: function(next) { app.run(["workspaces", "set", cls, "pin", next ? "true" : "false"]) }
       }
 
+      // Only for an application with a desktop entry: that is what says how
+      // to launch it. A bare window class has no command to start.
+      Ui.SwitchRow {
+        label: "Start when you log in"
+        visible: String(modelData.desktop || "") !== ""
+        checked: modelData.autostart === true
+        onRequested: function(next) { app.run(["workspaces", "set", cls, "autostart", next ? String(modelData.desktop) : ""]) }
+      }
+
       Ui.SwitchRow {
         label: "Don't take focus when opening"
         description: "The window appears without pulling you away from what you were doing."
