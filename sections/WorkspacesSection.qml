@@ -111,17 +111,32 @@ Ui.SectionBody {
 
       // What only a floating window can do sits under Floating, and goes away
       // with it — Hyprland ignores a pin on a tiled window rather than saying so.
-      Ui.PickerRow {
-        label: "Size and position"
+      // A share of the screen rather than pixels, so one rule fits every
+      // display. Empty hands the size back to the application.
+      Ui.TextRow {
+        label: "Width"
+        description: "Percent of the screen. Leave empty to let the application decide."
         visible: floating
-        value: String(modelData.placement || "")
-        options: [
-          { value: "", label: "Wherever the application puts it" },
-          { value: "half", label: "Centred, half the screen" },
-          { value: "large", label: "Centred, most of the screen" },
-          { value: "full", label: "Centred, nearly the whole screen" }
-        ]
-        onPicked: function(next) { app.run(["workspaces", "set", cls, "placement", next]) }
+        value: Number(modelData.width) > 0 ? String(modelData.width) : ""
+        placeholder: "e.g. 60"
+        onCommitted: function(next) { app.run(["workspaces", "set", cls, "width", next.trim()]) }
+      }
+
+      Ui.TextRow {
+        label: "Height"
+        description: "Percent of the screen."
+        visible: floating
+        value: Number(modelData.height) > 0 ? String(modelData.height) : ""
+        placeholder: "e.g. 60"
+        onCommitted: function(next) { app.run(["workspaces", "set", cls, "height", next.trim()]) }
+      }
+
+      Ui.SwitchRow {
+        label: "Centred"
+        description: "Opens in the middle of the screen."
+        visible: floating
+        checked: modelData.center === true
+        onRequested: function(next) { app.run(["workspaces", "set", cls, "center", next ? "true" : "false"]) }
       }
 
       Ui.SwitchRow {

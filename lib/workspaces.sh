@@ -159,7 +159,9 @@ workspaces_state() {
                              elif ($o.float // $t.float) == true then "floating" else "tiled" end),
                      monitor: ($o.monitor // $t.monitor // ""),
                      pin: ($o.pin // $t.pin // false),
-                     placement: ($o.placement // ""),
+                     width: ($o.width // (if $o.placement == "half" then 50 elif $o.placement == "large" then 70 elif $o.placement == "full" then 90 else 0 end)),
+                     height: ($o.height // (if $o.placement == "half" then 50 elif $o.placement == "large" then 70 elif $o.placement == "full" then 90 else 0 end)),
+                     center: ($o.center // ($o.placement != null)),
                      noInitialFocus: ($o.no_initial_focus // $t.no_initial_focus // false),
                      idleInhibit: ($o.idle_inhibit // $t.idle_inhibit // false),
                      noScreenShare: ($o.no_screen_share // $t.no_screen_share // false),
@@ -321,12 +323,15 @@ workspace_set() {
     monitor)
       [[ -z $value || $value =~ ^[^\"\\]+$ ]] || die "'$value' is not a display"
       json=$(jq -Rn --arg v "$value" '$v') ;;
-    # Where a floating window lands, as a handful of presets rather than
-    # coordinates: each is a size in monitor fractions plus `center`.
-    placement)
-      [[ -z $value || $value == half || $value == large || $value == full ]] \
-        || die "'$value' is not half, large or full"
-      json=$(jq -Rn --arg v "$value" '$v') ;;
+    # A floating window's size, as a share of the screen it opens on, so the
+    # same rule fits a laptop panel and a 4K monitor. Coordinates stay Lua's.
+    width|height)
+      [[ -z $value || ( $value =~ ^[0-9]+$ && $value -ge 10 && $value -le 100 ) ]] \
+        || die "'$value' is not a percentage between 10 and 100"
+      json=${value:-\"\"} ;;
+    center)
+      [[ $value == true || $value == false ]] || die "'$value' is not true or false"
+      json=$value ;;
     # How the window shows: one of three, since a fullscreen window is neither
     # tiled nor floating in any way you can see. Stored as the two Hyprland
     # fields, never both at once.
@@ -338,7 +343,7 @@ workspace_set() {
         *) die "'$value' is not tiled, floating or fullscreen" ;;
       esac
       workspace_write "$class" '.[$c] = ((.[$c] // {}) | del(.float) | del(.fullscreen) + $v
-        | if .float != true then del(.pin) | del(.placement) else . end)' --argjson v "$json"
+        | if .float != true then del(.pin) | del(.placement) | del(.width) | del(.height) | del(.center) else . end)' --argjson v "$json"
       return 0 ;;
     *) die "unknown window setting '$field'" ;;
   esac
@@ -355,7 +360,7 @@ workspace_set() {
         | if $v == "" or $v == false then del(.[$f]) else .[$f] = $v end
         | if $v == true and $f == "float" then del(.fullscreen)
           elif $v == true and $f == "fullscreen" then del(.float) else . end
-        | if $f == "float" and $v != true then del(.pin) | del(.placement) else . end)' \
+        | if $f == "float" and $v != true then del(.pin) | del(.placement) | del(.width) | del(.height) | del(.center) else . end)' \
     --arg f "$field" --argjson v "$json"
   return 0
 }
@@ -471,10 +476,13 @@ render_window_rules_lua() {
         (if $r.fullscreen == true then "fullscreen = true" else empty end),
         (if $r.pin == true then "pin = true" else empty end),
         (if ($r.monitor // "") != "" then "monitor = \"" + $r.monitor + "\"" else empty end),
-        (if $r.placement == "half" then "size = {\"monitor_w * 0.5\", \"monitor_h * 0.5\"}, center = true"
-         elif $r.placement == "large" then "size = {\"monitor_w * 0.7\", \"monitor_h * 0.7\"}, center = true"
-         elif $r.placement == "full" then "size = {\"monitor_w * 0.9\", \"monitor_h * 0.9\"}, center = true"
-         else empty end),
+        # A size needs both halves; one alone falls back to the same share of
+        # the other axis. Presets written by an earlier version still render.
+        (($r.width // (if $r.placement == "half" then 50 elif $r.placement == "large" then 70 elif $r.placement == "full" then 90 else null end)) as $w
+         | ($r.height // (if $r.placement == "half" then 50 elif $r.placement == "large" then 70 elif $r.placement == "full" then 90 else null end)) as $h
+         | if $w == null and $h == null then empty
+           else "size = {\"monitor_w * \(($w // $h) / 100)\", \"monitor_h * \(($h // $w) / 100)\"}" end),
+        (if $r.center == true or ($r.placement != null and $r.center == null) then "center = true" else empty end),
         (if $r.no_initial_focus == true then "no_initial_focus = true" else empty end),
         (if $r.idle_inhibit == true then "idle_inhibit = \"always\"" else empty end),
         (if $r.no_screen_share == true then "no_screen_share = true" else empty end) ] as $fields

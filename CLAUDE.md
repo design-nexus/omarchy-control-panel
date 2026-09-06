@@ -91,8 +91,9 @@ wrote comments the line out in place with a note, after `backup_once` and with
 a `luac -p` check and restore — the same targeted edit a device block gets.
 
 **The rest of a window rule is a short list, on purpose.** Beyond workspace
-and how it shows, an application gets display, a floating size preset (three
-sizes, all centred — coordinates are for Lua), pinned, no initial focus, idle
+and how it shows, an application gets display, a floating size as a width and
+height in percent of the screen plus a Centred switch (coordinates are for
+Lua), pinned, no initial focus, idle
 inhibit and no screen share. Opacity, blur, animation and the like are the
 Effects page's, per application in Lua only, and groups and tags are left
 alone. Pinned and placement only mean anything floating, so turning floating
