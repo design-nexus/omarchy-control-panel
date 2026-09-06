@@ -64,9 +64,6 @@ Ui.SectionBody {
 
       width: parent.width
       title: name
-      note: theirs && !ours ? "Set in your own Hyprland config. A value picked here goes on top of it."
-        : theirs ? "Also set in your own Hyprland config. The values here win."
-        : ""
 
       Ui.PickerRow {
         label: "Opens on"
@@ -209,9 +206,6 @@ Ui.SectionBody {
 
       width: parent.width
       title: "Workspace " + id
-      note: theirs && !ours ? "Set in your own Hyprland config. A value picked here goes on top of it."
-        : theirs ? "Also set in your own Hyprland config. The values here win."
-        : ""
 
       Ui.TextRow {
         label: "Name"
