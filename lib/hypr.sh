@@ -261,6 +261,7 @@ render_managed_lua() {
 
     render_extras_lua
     render_window_rules_lua
+    render_workspace_setups_lua
 
     # Per-device overrides, one hl.device call each.
     jq -r '(.devices // {}) | to_entries[]

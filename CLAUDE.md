@@ -90,6 +90,22 @@ as a table is about more than a class and is left alone. Removing a rule they
 wrote comments the line out in place with a note, after `backup_once` and with
 a `luac -p` check and restore — the same targeted edit a device block gets.
 
+**The rest of a window rule is a short list, on purpose.** Beyond workspace
+and how it shows, an application gets display, a floating size preset (three
+sizes, all centred — coordinates are for Lua), pinned, no initial focus, idle
+inhibit and no screen share. Opacity, blur, animation and the like are the
+Effects page's, per application in Lua only, and groups and tags are left
+alone. Pinned and placement only mean anything floating, so turning floating
+off drops both rather than keeping a promise Hyprland ignores.
+
+**Workspaces themselves are the second half of the page.** `.workspaceRules`
+renders as `hl.workspace_rule({ workspace = "3", ... })`: display, default on
+that display, persistent, default name, layout, and one "borderless" switch
+that writes the five look rules together. Only a workspace with something set
+gets a group; the rest wait behind a picker, so ten empty groups do not bury
+the applications. Their single-line `hl.workspace_rule` calls are read and
+commented out on remove, exactly as window rules are.
+
 **A rule only governs windows that open after it.** So every write also
 applies the rule in force to the windows of that class already open, through
 `hyprctl eval` and the `hl.dsp.window.*` dispatchers with a `window =

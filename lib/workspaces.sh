@@ -93,7 +93,12 @@ workspace_config_rules() {
           + (if $ws == null then {} else
                { workspace: ($ws | split(" ")[0]), silent: ($ws | endswith(" silent")) } end)
           + (if bool("float") == null then {} else { float: bool("float") } end)
-          + (if bool("fullscreen") == null then {} else { fullscreen: bool("fullscreen") } end))
+          + (if bool("fullscreen") == null then {} else { fullscreen: bool("fullscreen") } end)
+          + (if bool("pin") == null then {} else { pin: bool("pin") } end)
+          + (if bool("no_initial_focus") == null then {} else { no_initial_focus: bool("no_initial_focus") } end)
+          + (if bool("no_screen_share") == null then {} else { no_screen_share: bool("no_screen_share") } end)
+          + (if field("idle_inhibit") == null then {} else { idle_inhibit: (field("idle_inhibit") != "none") } end)
+          + (if field("monitor") == null then {} else { monitor: field("monitor") } end))
       | with_entries(select(.value != {}))' <<<"$out")
   done < <(for file in "$HYPR_DIR"/*.lua; do
              [[ -f $file ]] || continue
@@ -129,8 +134,152 @@ workspaces_state() {
                      fullscreen: ($o.fullscreen // $t.fullscreen // false),
                      shown: (if ($o.fullscreen // $t.fullscreen) == true then "fullscreen"
                              elif ($o.float // $t.float) == true then "floating" else "tiled" end),
+                     monitor: ($o.monitor // $t.monitor // ""),
+                     pin: ($o.pin // $t.pin // false),
+                     placement: ($o.placement // ""),
+                     noInitialFocus: ($o.no_initial_focus // $t.no_initial_focus // false),
+                     idleInhibit: ($o.idle_inhibit // $t.idle_inhibit // false),
+                     noScreenShare: ($o.no_screen_share // $t.no_screen_share // false),
                      ours: ($ours | has($c)),
-                     theirs: ($t != {}) } ] }'
+                     theirs: ($t != {}) } ],
+        setups: $setups }' --argjson setups "$(workspace_setups_state)"
+}
+
+# ------------------------------------------------------ the workspaces themselves
+#
+# A workspace rule is about the place rather than what opens there: which
+# display it lives on, whether it is that display's default, whether it stays
+# when empty, what it is called, how it lays windows out. Same store, same
+# managed file, rendered as `hl.workspace_rule` — the second half of the page.
+
+workspace_setups_ours() {
+  jq -c '.workspaceRules // {}' <<<"$(read_store)"
+}
+
+# Their own single-line `hl.workspace_rule({ workspace = "N", ... })` calls,
+# read the way window rules are. A `name:` selector is left alone: the page
+# speaks in numbers.
+workspace_setups_config() {
+  local file line body out='{}'
+  while IFS= read -r line; do
+    body=$(sed -nE 's/^[[:space:]]*hl\.workspace_rule\([[:space:]]*\{(.*)\}[[:space:]]*\).*/\1/p' <<<"$line")
+    [[ -n $body ]] || continue
+    out=$(jq -c --arg body "$body" '
+      def field($k): ([$body | capture("(^|,)\\s*" + $k + "\\s*=\\s*(?<v>\"[^\"]*\"|[a-z0-9.]+)")] | first
+                      | if . == null then null else .v | ltrimstr("\"") | rtrimstr("\"") end);
+      def bool($k): field($k) | if . == "true" then true elif . == "false" then false else null end;
+      field("workspace") as $ws
+      | if $ws == null or ($ws | test("^[0-9]+$") | not) then . else
+        .[$ws] = ((.[$ws] // {})
+          + (if field("monitor") == null then {} else { monitor: field("monitor") } end)
+          + (if bool("default") == null then {} else { default: bool("default") } end)
+          + (if bool("persistent") == null then {} else { persistent: bool("persistent") } end)
+          + (if field("default_name") == null then {} else { name: field("default_name") } end)
+          + (if field("layout") == null then {} else { layout: field("layout") } end)
+          + (if bool("decorate") == false and bool("no_border") == true then { minimal: true } else {} end))
+        end' <<<"$out")
+  done < <(for file in "$HYPR_DIR"/*.lua; do
+             [[ -f $file ]] || continue
+             [[ $file == "$MANAGED_LUA" ]] && continue
+             grep -E '^[[:space:]]*hl\.workspace_rule\(' "$file" 2>/dev/null
+           done)
+  printf '%s\n' "$out"
+}
+
+workspace_setups_state() {
+  local ours theirs
+  ours=$(workspace_setups_ours)
+  theirs=$(workspace_setups_config)
+  jq -cn --argjson ours "$ours" --argjson theirs "$theirs" '
+    (($ours | keys) + ($theirs | keys) | unique | sort_by(tonumber)) as $ids
+    | [ $ids[] as $i
+        | ($ours[$i] // {}) as $o | ($theirs[$i] // {}) as $t
+        | { id: $i,
+            label: ("Workspace " + $i),
+            monitor: ($o.monitor // $t.monitor // ""),
+            default: ($o.default // $t.default // false),
+            persistent: ($o.persistent // $t.persistent // false),
+            name: ($o.name // $t.name // ""),
+            layout: ($o.layout // $t.layout // ""),
+            minimal: ($o.minimal // $t.minimal // false),
+            ours: ($ours | has($i)),
+            theirs: ($t != {}) } ]'
+}
+
+workspace_setup_add() {
+  local id=$1
+  [[ $id =~ ^[0-9]+$ ]] || die "'$id' is not a workspace number"
+  edit_store '.workspaceRules = ((.workspaceRules // {}) | .[$i] = (.[$i] // {}))' --arg i "$id"
+}
+
+workspace_setup_set() {
+  local id=$1 field=$2 value=$3 json
+  [[ $id =~ ^[0-9]+$ ]] || die "'$id' is not a workspace number"
+  case $field in
+    monitor|name)
+      [[ -z $value || $value =~ ^[^\"\\]+$ ]] || die "'$value' cannot go in a Lua string"
+      json=$(jq -Rn --arg v "$value" '$v') ;;
+    layout)
+      [[ -z $value || $value =~ ^[a-z]+$ ]] || die "'$value' is not a layout"
+      json=$(jq -Rn --arg v "$value" '$v') ;;
+    default|persistent|minimal)
+      [[ $value == true || $value == false ]] || die "'$value' is not true or false"
+      json=$value ;;
+    *) die "unknown workspace setting '$field'" ;;
+  esac
+  # Off and empty mean "no rule", as they do for a window: a workspace with
+  # `persistent = false` written down is not the same as one never mentioned.
+  edit_store '.workspaceRules = ((.workspaceRules // {})
+    | .[$i] = ((.[$i] // {}) | if $v == "" or $v == false then del(.[$f]) else .[$f] = $v end))' \
+    --arg i "$id" --arg f "$field" --argjson v "$json"
+  hyprctl reload >/dev/null 2>&1 || true
+}
+
+# Ours goes; a line they wrote is commented out in place, as a window rule is.
+workspace_setup_remove() {
+  local id=$1 file previous
+  [[ $id =~ ^[0-9]+$ ]] || die "'$id' is not a workspace number"
+  edit_store '.workspaceRules = ((.workspaceRules // {}) | del(.[$i]))' --arg i "$id"
+
+  for file in "$HYPR_DIR"/*.lua; do
+    [[ -f $file ]] || continue
+    [[ $file == "$MANAGED_LUA" ]] && continue
+    read_file "$file" | grep -qE "^[[:space:]]*hl\.workspace_rule\([[:space:]]*\{[[:space:]]*workspace *= *\"$id\"" || continue
+    previous=$(read_file "$file")
+    backup_once "$file"
+    awk -v id="$id" '
+      $0 ~ /^[ \t]*hl\.workspace_rule\(/ && $0 ~ ("workspace *= *\"" id "\"") {
+        print "-- " $0
+        print "-- ^ removed in OmaSettings; delete the dashes to bring it back."
+        next
+      }
+      { print }
+    ' <(read_file "$file") | write_file "$file" managed
+    if ! capture luac -p "$file" >/dev/null; then
+      printf '%s' "$previous" | write_file "$file" managed
+      die "removing that rule would have broken $(basename "$file"), so nothing changed"
+    fi
+  done
+  hyprctl reload >/dev/null 2>&1 || true
+}
+
+render_workspace_setups_lua() {
+  local rules
+  rules=$(workspace_setups_ours)
+  [[ $rules == "{}" ]] && return 0
+  echo ""
+  echo "-- Workspaces set up from the Workspaces page."
+  jq -r 'to_entries[] | select(.value != {})
+    | .value as $r
+    | [ (if ($r.monitor // "") != "" then "monitor = \"" + $r.monitor + "\"" else empty end),
+        (if $r.default == true then "default = true" else empty end),
+        (if $r.persistent == true then "persistent = true" else empty end),
+        (if ($r.name // "") != "" then "default_name = \"" + $r.name + "\"" else empty end),
+        (if ($r.layout // "") != "" then "layout = \"" + $r.layout + "\"" else empty end),
+        (if $r.minimal == true then "gaps_in = 0, gaps_out = 0, no_border = true, no_rounding = true, decorate = false" else empty end)
+      ] as $fields
+    | select(($fields | length) > 0)
+    | "hl.workspace_rule({ workspace = \"" + .key + "\", " + ($fields | join(", ")) + " })"' <<<"$rules"
 }
 
 # One field of one class. A class is a regex to Hyprland, so the two
@@ -143,9 +292,18 @@ workspace_set() {
     workspace)
       [[ -z $value || $value =~ ^[0-9]+$ || $value == special ]] || die "'$value' is not a workspace"
       json=$(jq -Rn --arg v "$value" '$v') ;;
-    silent|float|fullscreen)
+    silent|float|fullscreen|pin|no_initial_focus|idle_inhibit|no_screen_share)
       [[ $value == true || $value == false ]] || die "'$value' is not true or false"
       json=$value ;;
+    monitor)
+      [[ -z $value || $value =~ ^[^\"\\]+$ ]] || die "'$value' is not a display"
+      json=$(jq -Rn --arg v "$value" '$v') ;;
+    # Where a floating window lands, as a handful of presets rather than
+    # coordinates: each is a size in monitor fractions plus `center`.
+    placement)
+      [[ -z $value || $value == half || $value == large || $value == full ]] \
+        || die "'$value' is not half, large or full"
+      json=$(jq -Rn --arg v "$value" '$v') ;;
     # How the window shows: one of three, since a fullscreen window is neither
     # tiled nor floating in any way you can see. Stored as the two Hyprland
     # fields, never both at once.
@@ -168,7 +326,11 @@ workspace_set() {
     | .[$c] = ((.[$c] // {})
         | if $v == "" or $v == false then del(.[$f]) else .[$f] = $v end
         | if $v == true and $f == "float" then del(.fullscreen)
-          elif $v == true and $f == "fullscreen" then del(.float) else . end))' \
+          elif $v == true and $f == "fullscreen" then del(.float) else . end
+        # Pinning and placement only mean anything floating; a window that
+        # stops floating stops carrying them rather than keeping a promise
+        # Hyprland will ignore.
+        | if $f == "float" and $v != true then del(.pin) | del(.placement) else . end))' \
     --arg c "$class" --arg f "$field" --argjson v "$json"
   hyprctl reload >/dev/null 2>&1 || true
 
@@ -270,7 +432,16 @@ render_window_rules_lua() {
            "workspace = \"" + $r.workspace + (if $r.silent == true then " silent" else "" end) + "\""
          else empty end),
         (if $r.float == true then "float = true" else empty end),
-        (if $r.fullscreen == true then "fullscreen = true" else empty end) ] as $fields
+        (if $r.fullscreen == true then "fullscreen = true" else empty end),
+        (if $r.pin == true then "pin = true" else empty end),
+        (if ($r.monitor // "") != "" then "monitor = \"" + $r.monitor + "\"" else empty end),
+        (if $r.placement == "half" then "size = {\"monitor_w * 0.5\", \"monitor_h * 0.5\"}, center = true"
+         elif $r.placement == "large" then "size = {\"monitor_w * 0.7\", \"monitor_h * 0.7\"}, center = true"
+         elif $r.placement == "full" then "size = {\"monitor_w * 0.9\", \"monitor_h * 0.9\"}, center = true"
+         else empty end),
+        (if $r.no_initial_focus == true then "no_initial_focus = true" else empty end),
+        (if $r.idle_inhibit == true then "idle_inhibit = \"always\"" else empty end),
+        (if $r.no_screen_share == true then "no_screen_share = true" else empty end) ] as $fields
     | select(($fields | length) > 0)
     | "o.window(\"" + .key + "\", { " + ($fields | join(", ")) + " })"' <<<"$rules"
 }
@@ -281,6 +452,13 @@ workspaces_cmd() {
     add) workspace_add "${2:-}" ;;
     set) workspace_set "${2:-}" "${3:-}" "${4:-}" ;;
     remove) workspace_remove "${2:-}" ;;
-    *) die "usage: omasettings workspaces state | add <class> | set <class> workspace|silent|shown|float|fullscreen <value> | remove <class>" ;;
+    setup)
+      case ${2:-} in
+        add) workspace_setup_add "${3:-}" ;;
+        set) workspace_setup_set "${3:-}" "${4:-}" "${5:-}" ;;
+        remove) workspace_setup_remove "${3:-}" ;;
+        *) die "usage: omasettings workspaces setup add <n> | set <n> monitor|default|persistent|name|layout|minimal <value> | remove <n>" ;;
+      esac ;;
+    *) die "usage: omasettings workspaces state | add <class> | set <class> <field> <value> | remove <class> | setup ..." ;;
   esac
 }

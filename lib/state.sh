@@ -279,7 +279,8 @@ state() {
       audio: (entries($audio.outputs; "Output"; "description"; "name")
               + entries($audio.inputs; "Input"; "description"; "name")),
       bindings: entries($bindings.items; "Keybindings"; "keys"; "description"),
-      workspaces: entries($workspaces.rules; "Applications"; "name"; "class"),
+      workspaces: (entries($workspaces.rules; "Applications"; "name"; "class")
+                   + entries($workspaces.setups; "Workspaces"; "label"; "name")),
       plugins: entries($plugins; "Plugins"; "name"; "id"),
       displays: entries($monitors; "Displays"; "label"; "name") }'''))
 

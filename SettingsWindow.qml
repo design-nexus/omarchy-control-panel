@@ -271,6 +271,7 @@ Item {
   readonly property var workspaces: state.workspaces !== undefined ? state.workspaces : ({})
   readonly property var workspaceApps: workspaces.apps !== undefined ? workspaces.apps : []
   readonly property var workspaceRules: workspaces.rules !== undefined ? workspaces.rules : []
+  readonly property var workspaceSetups: workspaces.setups !== undefined ? workspaces.setups : []
   property string bindingFilter: ""
 
   // Matching on keys and description together is what people actually search
