@@ -64,12 +64,9 @@ Ui.SectionBody {
 
       width: parent.width
       title: name
-      // The class is machinery, but it is also the one thing that says which
-      // windows this rule catches — shown where it differs from the name.
-      note: (cls !== name ? "Windows of class " + cls + ". " : "")
-        + (theirs && !ours ? "Set in your own Hyprland config. A value picked here goes on top of it."
-           : theirs ? "Also set in your own Hyprland config. The values here win."
-           : "")
+      note: theirs && !ours ? "Set in your own Hyprland config. A value picked here goes on top of it."
+        : theirs ? "Also set in your own Hyprland config. The values here win."
+        : ""
 
       Ui.PickerRow {
         label: "Opens on"
