@@ -88,9 +88,17 @@ written, and shown as "set in your own config"; a value picked for the same
 class lands in our file, which loads last and wins per property. A match given
 as a table is about more than a class and is left alone.
 
-Setting a workspace also moves the windows already open with
-`movetoworkspacesilent`, because the point of binding an application is not
-having to go and find it.
+**A rule only governs windows that open after it.** So every write also
+applies the rule in force to the windows of that class already open, through
+`hyprctl eval` and the `hl.dsp.window.*` dispatchers with a `window =
+"address:0x…"` target. Without this, "Shown as: Floating" left a fullscreen
+Typora fullscreen — and Typora, like most Electron apps, remembers how it was
+closed, so it came back fullscreen however the rule read. Two dispatcher traps:
+`hyprctl dispatch <old syntax>` on a Lua config parses its argument as Lua and
+fails — silently, if stderr is dropped — so nothing here uses it; and
+`hl.dsp.window.float()` toggles whatever argument it is given, so it is sent
+only to a window on the wrong side of the rule. `fullscreen_state` and `move`
+do set rather than toggle.
 
 ## Pages for applications you may not have
 

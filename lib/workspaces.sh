@@ -171,14 +171,40 @@ workspace_set() {
     --arg c "$class" --arg f "$field" --argjson v "$json"
   hyprctl reload >/dev/null 2>&1 || true
 
-  # A rule applies to windows that open from now on. The ones already open are
-  # what the user is looking at, so they are moved as well — silently, since
-  # the point of binding an application to a workspace is not having to go
-  # and find it.
-  if [[ $field == workspace && -n $value ]]; then
-    hyprctl dispatch movetoworkspacesilent "$value,class:^($class)\$" >/dev/null 2>&1 || true
-  fi
+  workspace_apply_live "$class"
   return 0
+}
+
+# A window rule applies to windows that open from now on. The ones already
+# open are what the user is looking at, so the rule in force is applied to them
+# as well — otherwise "Shown as: Floating" leaves a fullscreen window
+# fullscreen, and an application that remembers how it was closed (Typora,
+# most Electron apps) opens fullscreen again next time however the rule reads.
+#
+# Through `hyprctl eval`, not `hyprctl dispatch`: on a Lua config the latter
+# parses its argument as Lua, so the old `movetoworkspacesilent 7,class:...`
+# form fails — and did so silently here for a while.
+workspace_apply_live() {
+  local class=$1 rule ws float fullscreen addr floating lua
+  rule=$(jq -c --arg c "$class" '(.windowRules // {})[$c] // {}' <<<"$(read_store)")
+  ws=$(jq -r '.workspace // ""' <<<"$rule")
+  float=$(jq -r '.float // false' <<<"$rule")
+  fullscreen=$(jq -r '.fullscreen // false' <<<"$rule")
+
+  while IFS=$'\t' read -r addr floating; do
+    [[ -n $addr ]] || continue
+    lua="local w = 'address:$addr'"
+    # Fullscreen mode 2 is what the rule gives a window; 0 takes it back.
+    lua+="; hl.dispatch(hl.dsp.window.fullscreen_state({ internal = $([[ $fullscreen == true ]] && echo 2 || echo 0), client = 0, window = w }))"
+    # The float dispatcher toggles whatever it is told — every key tried
+    # (action, state, mode, floating) flipped the window — so it is sent only
+    # to a window that is on the wrong side.
+    [[ $floating != "$float" ]] && lua+="; hl.dispatch(hl.dsp.window.float({ window = w }))"
+    # A workspace is only a place to go; "wherever it was" moves nothing.
+    [[ -n $ws ]] && lua+="; hl.dispatch(hl.dsp.window.move({ workspace = '$ws', follow = false, window = w }))"
+    hyprctl eval "$lua" >/dev/null 2>&1 </dev/null || true
+  done < <(capture hyprctl -j clients \
+           | jq -r --arg c "$class" '.[] | select(.class == $c) | "\(.address)\t\(.floating)"' 2>/dev/null)
 }
 
 # Drops our rule. One the user wrote stays: their file is theirs, and the page
