@@ -12,7 +12,9 @@ window on first use.
 
 ```
 manifest.json          Plugin manifest — id, kinds, entry point
-Panel.qml              The bar gear; loads SettingsWindow.qml on first use
+Panel.qml              The bar gear; forwards show/hide/toggle to the service
+Service.qml            Owns the window (loaded on first use), the `omasettings`
+                       IPC target, and the launcher entry
 SettingsWindow.qml     Window chrome, sidebar, page routing, and the state
                        every page reads. Pages reach it as `app`.
 ui/                    Presentational components + the Palette singleton
@@ -345,10 +347,29 @@ One thing follows from that:
   through the `default` branch is one the search cannot see. That is exactly
   what hid Herdr's 25 settings.
 
+## The service owns the window
+
+Omarchy counts a plugin as enabled when its id appears anywhere in
+`shell.json` — a `bar.layout` entry or a `plugins[]` entry. When the bar
+widget hosted the window, taking the gear out of the bar was the same thing as
+uninstalling: the `omasettings` IPC target answered "Target not found", the
+launcher entry was deleted, and a hotkey bound to it stopped working.
+
+So `Service.qml` holds the window, its `Loader` and the `IpcHandler`; the
+shell keeps a service alive for as long as the plugin is enabled, however it
+was enabled. `Panel.qml` is only the gear: it looks the service up through
+`bar.shell.serviceFor()` and forwards to it, keeping `open`/`close`/`opened`
+so `Bar.findPanelWidget` still routes `shell summon` through it. One window
+also means one window on a two-monitor setup, where each bar instance used to
+carry its own.
+
+The shell tears services down on `reloadPlugins()` as well as widgets, so the
+Plugins page's summon-back dance below is still needed.
+
 ## The launcher entry
 
-The plugin is an app as well as a bar widget: `Service.qml` is a `service`
-entry point that writes `~/.local/share/applications/omasettings.desktop` from
+The plugin is an app as well as a bar widget: `Service.qml` is also the
+`service` entry point that writes `~/.local/share/applications/omasettings.desktop` from
 the template beside it, substituting the icon path, and deletes it again on
 disable or remove. Omarchy has no install hook, which is why this lives in the
 plugin rather than in a package.
@@ -558,8 +579,8 @@ first.
   plain `source` assignment — otherwise every binding evaluates against a null
   window on load.
 - **`summon` on a bar-widget+panel plugin routes to the widget**, not the panel.
-  That is why the window is hosted by the bar widget rather than declared as a
-  `panel` entry point.
+  That is why the window is not a `panel` entry point: it lives in the service,
+  and the bar widget stands in for it with `open`/`close`/`opened`.
 - **Icon glyphs are not guaranteed.** Signal-strength codepoints render as tofu
   in this Nerd Font, so signal bars are drawn with rectangles. Omarchy's own
   icon font is resolved by *file* (`fc-list ':family=omarchy:charset=e905'`) and
