@@ -128,6 +128,7 @@ state_slice() {
     tmux) jq -cn --argjson v "$(tmux_state)" '{ tmux: $v }' ;;
     nvim) jq -cn --argjson v "$(nvim_state)" '{ nvim: $v }' ;;
     bindings) jq -cn --argjson v "$(bindings_state)" '{ bindings: $v }' ;;
+    workspaces) jq -cn --argjson v "$(workspaces_state)" '{ workspaces: $v }' ;;
     devices) jq -cn --argjson v "$(devices_state)" '{ devices: $v }' ;;
     wifi) jq -cn --argjson v "$(wifi_state)" '{ wifi: $v }' ;;
     bluetooth) jq -cn --argjson v "$(bluetooth_state)" '{ bluetooth: $v }' ;;
@@ -177,7 +178,7 @@ state() {
   # Named slices answer on their own; with nothing named, the whole document.
   if (( $# > 0 )); then state_slices "$@"; return; fi
 
-  local cfg themes fonts theme font nightlight hypr hyprchanged searchindex monitors compose plugins pluginupdates selfupdate agents groups iconfonts datetime herdr textscale
+  local cfg themes fonts theme font nightlight hypr hyprchanged searchindex monitors compose plugins pluginupdates selfupdate agents groups iconfonts datetime herdr textscale workspaces
   cfg=$(read_shell_json)
 
   # Before the block, both of them: this is the one part of a state read that
@@ -211,6 +212,7 @@ state() {
   par_run tmuxstate tmux_state
   par_run nvimstate nvim_state
   par_run bindings bindings_state
+  par_run workspaces workspaces_state
   par_run devices devices_state
   par_run wifi wifi_state
   par_run bluetooth bluetooth_state
@@ -247,6 +249,7 @@ state() {
   tmuxstate=$(par_get tmuxstate '{}')
   nvimstate=$(par_get nvimstate '{}')
   bindings=$(par_get bindings '{}')
+  workspaces=$(par_get workspaces '{}')
   devices=$(par_get devices '{}')
   wifi=$(par_get wifi '{}')
   bluetooth=$(par_get bluetooth '{}')
@@ -263,6 +266,7 @@ state() {
     --argjson wifi "${wifi:-{\}}" \
     --argjson audio "${audio:-{\}}" \
     --argjson bindings "${bindings:-{\}}" \
+    --argjson workspaces "${workspaces:-{\}}" \
     --argjson plugins "${plugins:-[]}" \
     --argjson monitors "${monitors:-[]}" '''
     def entries(list; groupName; labelKey; descKey):
@@ -275,6 +279,7 @@ state() {
       audio: (entries($audio.outputs; "Output"; "description"; "name")
               + entries($audio.inputs; "Input"; "description"; "name")),
       bindings: entries($bindings.items; "Keybindings"; "keys"; "description"),
+      workspaces: entries($workspaces.rules; "Applications"; "name"; "class"),
       plugins: entries($plugins; "Plugins"; "name"; "id"),
       displays: entries($monitors; "Displays"; "label"; "name") }'''))
 
@@ -301,6 +306,7 @@ state() {
     --argjson tmux "${tmuxstate:-{\}}" \
     --argjson nvim "${nvimstate:-{\}}" \
     --argjson bindings "${bindings:-{\}}" \
+    --argjson workspaces "${workspaces:-{\}}" \
     --argjson devices "${devices:-{\}}" \
     --argjson wifi "${wifi:-{\}}" \
     --argjson bluetooth "${bluetooth:-{\}}" \
@@ -336,6 +342,7 @@ state() {
       tmux: $tmux,
       nvim: $nvim,
       bindings: $bindings,
+      workspaces: $workspaces,
       devices: $devices,
       wifi: $wifi,
       bluetooth: $bluetooth,

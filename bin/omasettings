@@ -33,7 +33,7 @@ OMASETTINGS_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 # itself: it is started from the window's own copy, which is not on any PATH.
 OMASETTINGS_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
-for module in core store hypr devices monitors shell_config compose plugins menu herdr tmux neovim bindings wifi bluetooth power audio setters state; do
+for module in core store hypr devices monitors workspaces shell_config compose plugins menu herdr tmux neovim bindings wifi bluetooth power audio setters state; do
   # shellcheck source=/dev/null
   source "$OMASETTINGS_LIB/$module.sh"
 done
@@ -55,6 +55,7 @@ case ${1:-state} in
   herdr) shift; herdr_cmd "$@" ;;
   tmux|nvim) app_cmd "$@" ;;
   keys) shift; keys_cmd "$@" ;;
+  workspaces) shift; workspaces_cmd "$@" ;;
   devices) shift; devices_cmd "$@" ;;
   wifi) shift; wifi_cmd "$@" ;;
   bluetooth) shift; bluetooth_cmd "$@" ;;
@@ -80,6 +81,8 @@ usage:
   omasettings nvim state | nvim set <option> <value>
   omasettings devices state | set <device> <option> <value> keyboard|pointer
                  | clear <device> [option] | remove <device>
+  omasettings workspaces state | add <class> | set <class> workspace|silent|float|fullscreen <value>
+                 | remove <class>            (which workspace an application opens on)
   omasettings keys list | add "<KEYS>" "<description>" "<command>" | remove "<KEYS>" | disable "<KEYS>"
   omasettings audio state | audio watch | default output|input <device> | volume output|input <percent>
                  | mute output|input on|off|toggle

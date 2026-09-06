@@ -265,6 +265,12 @@ Item {
   }
 
   readonly property var bindings: state.bindings !== undefined ? state.bindings : ({})
+
+  // Which workspace an application opens on: the applications that can be
+  // picked, and the rules in force for the ones already bound.
+  readonly property var workspaces: state.workspaces !== undefined ? state.workspaces : ({})
+  readonly property var workspaceApps: workspaces.apps !== undefined ? workspaces.apps : []
+  readonly property var workspaceRules: workspaces.rules !== undefined ? workspaces.rules : []
   property string bindingFilter: ""
 
   // Matching on keys and description together is what people actually search
@@ -758,6 +764,7 @@ Item {
       case "bar": return ["bar"]
       case "plugin": return ["plugins", "pluginUpdates", "selfUpdate"]
       case "keys": return ["bindings"]
+      case "workspaces": return ["workspaces"]
       case "compose": return ["compose"]
       case "devices": return ["devices", "hyprChanged"]
       case "herdr": return ["herdr", "hyprChanged"]
@@ -904,6 +911,7 @@ Item {
     // Look and feel
     { id: "appearance", title: "Appearance", icon: "\uf1fc" },
     { id: "bar", title: "Bar", icon: "\uf0ca" },
+    { id: "workspaces", title: "Workspaces", icon: "\uf24d" },
     { id: "windows", title: "Windows", icon: "\uf2d0" },
     { id: "layout", title: "Layout", icon: "\uf009" },
     { id: "effects", title: "Effects", icon: "\uf0eb" },
@@ -1016,6 +1024,7 @@ Item {
     switch (id) {
     case "appearance": return "sections/AppearanceSection.qml"
     case "bar": return "sections/BarSection.qml"
+    case "workspaces": return "sections/WorkspacesSection.qml"
     case "windows": return "sections/WindowsSection.qml"
     case "keyboard": return "sections/KeyboardSection.qml"
     case "bindings": return "sections/BindingsSection.qml"

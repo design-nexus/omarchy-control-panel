@@ -260,6 +260,7 @@ render_managed_lua() {
     ' <<<"$store"
 
     render_extras_lua
+    render_window_rules_lua
 
     # Per-device overrides, one hl.device call each.
     jq -r '(.devices // {}) | to_entries[]

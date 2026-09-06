@@ -10,6 +10,8 @@ One window for every Omarchy setting, from Hyprland to your keybindings to tmux.
   blur, shadows, animations and their speed, window group tabs, tiling layout.
 - **The bar.** Position, transparency, which widgets sit where, and which
   plugins are enabled, plus add, remove and update them.
+- **Workspaces.** Bind an application to a workspace, open it there in the
+  background, floating or fullscreen, picked from the applications you have.
 - **Keybindings.** Browse every binding you have, add your own, turn Omarchy's
   off, put them back. No Lua.
 - **Compose keys.** Your `~/.XCompose` sequences as a list you can add to and

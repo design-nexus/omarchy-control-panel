@@ -66,6 +66,32 @@ Two invariants on top:
   the option to the running server. On failure, restore the previous content and
   `die` with the tool's own message.
 
+## The Workspaces page
+
+An application bound to a workspace is a window rule: `o.window("slack",
+{ workspace = "3" })`, the line people write at the foot of `hyprland.lua` by
+hand. Ours go into the managed Lua under `.windowRules`, keyed by window class,
+rendered in the same shape so the two read alike. A rule is an override, so a
+row carries Remove rather than a reset; an off switch or an empty workspace
+deletes the field rather than writing `false`, since `float = false` would pin
+a window tiled against the user's own config.
+
+**The class is the trap.** Slack's desktop entry says `StartupWMClass=Slack`
+and its windows say `slack`, and a Hyprland match is a case-sensitive regex.
+So `workspace_apps` lists desktop entries but takes the class from a running
+window of the same name in any case when there is one, and lists running
+classes with no entry at all. An application that has never run is bound by
+its entry's class, which is the best guess there is.
+
+Their own single-line `o.window("<class>", { ... })` rules are read, never
+written, and shown as "set in your own config"; a value picked for the same
+class lands in our file, which loads last and wins per property. A match given
+as a table is about more than a class and is left alone.
+
+Setting a workspace also moves the windows already open with
+`movetoworkspacesilent`, because the point of binding an application is not
+having to go and find it.
+
 ## Pages for applications you may not have
 
 Tmux, Neovim and Herdr get a page each, and an application you do not have is
@@ -85,7 +111,7 @@ setting:
 
 | Page | Lands in |
 | --- | --- |
-| Windows, Layout, Effects, Groups, Keyboard, Mouse | `~/.config/hypr/omasettings.lua`, loaded last |
+| Windows, Layout, Effects, Groups, Keyboard, Mouse, Workspaces | `~/.config/hypr/omasettings.lua`, loaded last |
 | Appearance | Omarchy's own config, via `omarchy-theme-set`, `omarchy font set`, `omarchy display text size` |
 | Bar, Idle & Lock, Plugins | `~/.config/omarchy/shell.json` |
 | Keybindings | a marked block in `~/.config/hypr/bindings.lua` |
