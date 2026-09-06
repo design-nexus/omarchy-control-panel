@@ -86,7 +86,9 @@ its entry's class, which is the best guess there is.
 Their own single-line `o.window("<class>", { ... })` rules are read, never
 written, and shown as "set in your own config"; a value picked for the same
 class lands in our file, which loads last and wins per property. A match given
-as a table is about more than a class and is left alone.
+as a table is about more than a class and is left alone. Removing a rule they
+wrote comments the line out in place with a note, after `backup_once` and with
+a `luac -p` check and restore — the same targeted edit a device block gets.
 
 **A rule only governs windows that open after it.** So every write also
 applies the rule in force to the windows of that class already open, through

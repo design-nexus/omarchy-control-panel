@@ -12,9 +12,10 @@
 # goes back to opening wherever it was closed — so these rows carry Remove
 # rather than a reset, the way bindings and compose sequences do.
 #
-# Rules the user wrote themselves are read, never rewritten: they show on the
-# page as "set in your own config", and a value picked here for the same
-# class goes into our file, which loads last and therefore wins per property.
+# Rules the user wrote themselves are read and shown as "set in your own
+# config"; a value picked here for the same class goes into our file, which
+# loads last and therefore wins per property. Removing one comments their line
+# out in place — see workspace_remove — and never regenerates their file.
 
 # The class an application's windows carry, as best it can be known without
 # running it. A desktop entry says so in StartupWMClass when it bothers to;
@@ -207,12 +208,42 @@ workspace_apply_live() {
            | jq -r --arg c "$class" '.[] | select(.class == $c) | "\(.address)\t\(.floating)"' 2>/dev/null)
 }
 
-# Drops our rule. One the user wrote stays: their file is theirs, and the page
-# says so beside it.
+# Drops our rule, and takes a line the user wrote for the same class with it.
+#
+# Their line is commented out rather than deleted, the way a device block is:
+# it is their config, and a rule that turns out to have been wanted should be
+# recoverable by deleting two dashes rather than from a backup. Only the
+# single-line `o.window("<class>", { ... })` form is touched — the same one
+# that is read — and the file is checked with `luac -p` afterwards and put
+# back if the edit broke it.
 workspace_remove() {
-  local class=$1
+  local class=$1 file previous
   [[ -n $class ]] || die "no application given"
   edit_store '.windowRules = ((.windowRules // {}) | del(.[$c]))' --arg c "$class"
+
+  for file in "$HYPR_DIR"/*.lua; do
+    [[ -f $file ]] || continue
+    [[ $file == "$MANAGED_LUA" ]] && continue
+    read_file "$file" | grep -qE "^[[:space:]]*o\.window\(\"$(sed 's/[][\\.*^$|?+(){}]/\\&/g' <<<"$class")\"," || continue
+
+    previous=$(read_file "$file")
+    backup_once "$file"
+
+    awk -v class="$class" '
+      index($0, "o.window(\"" class "\",") && $0 ~ /^[ \t]*o\.window\(/ {
+        print "-- " $0
+        print "-- ^ removed in OmaSettings; delete the dashes to bring it back."
+        next
+      }
+      { print }
+    ' <(read_file "$file") | write_file "$file" managed
+
+    if ! capture luac -p "$file" >/dev/null; then
+      printf '%s' "$previous" | write_file "$file" managed
+      die "removing that rule would have broken $(basename "$file"), so nothing changed"
+    fi
+  done
+
   hyprctl reload >/dev/null 2>&1 || true
 }
 

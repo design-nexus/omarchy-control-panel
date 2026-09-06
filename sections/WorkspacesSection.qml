@@ -44,7 +44,7 @@ Ui.SectionBody {
       // The class is machinery, but it is also the one thing that says which
       // windows this rule catches — shown where it differs from the name.
       note: (cls !== name ? "Windows of class " + cls + ". " : "")
-        + (theirs && !ours ? "Set in your own Hyprland config; a value picked here goes on top of it."
+        + (theirs && !ours ? "Set in your own Hyprland config. A value picked here goes on top of it."
            : theirs ? "Also set in your own Hyprland config. The values here win."
            : "")
 
@@ -78,12 +78,11 @@ Ui.SectionBody {
         onPicked: function(next) { app.run(["workspaces", "set", cls, "shown", next]) }
       }
 
-      // A rule the user wrote lives in their file, which this page never
-      // rewrites; only what was set here can be taken off here.
+      // A rule the user wrote is commented out in their own file, not deleted:
+      // two dashes to delete is an easier way back than a backup.
       Ui.ActionRow {
         label: "Remove"
-        description: theirs ? "Takes off what was set here. Your own config's rule stays." : ""
-        visible: ours
+        description: theirs ? "Your own config's line is commented out, so it can be brought back by hand." : ""
         buttonText: "Remove"
         onTriggered: app.run(["workspaces", "remove", cls])
       }
