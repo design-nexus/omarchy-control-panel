@@ -168,7 +168,6 @@ Ui.SectionBody {
       // A rule the user wrote is commented out in their own file, not deleted:
       // two dashes to delete is an easier way back than a backup.
       Ui.ActionRow {
-        label: "Remove"
         buttonText: "Remove"
         onTriggered: app.run(["workspaces", "remove", cls])
       }
@@ -265,7 +264,6 @@ Ui.SectionBody {
       }
 
       Ui.ActionRow {
-        label: "Remove"
         buttonText: "Remove"
         onTriggered: app.run(["workspaces", "setup", "remove", id])
       }
