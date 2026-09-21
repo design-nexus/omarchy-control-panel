@@ -1,4 +1,4 @@
-# OmaSettings
+# Omarchy Control Panel
 
 One window for every Omarchy setting, from Hyprland to your keybindings to tmux.
 
@@ -39,13 +39,24 @@ out of. And hopefully someone else finds it useful too.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/twiking/omasettings.git --enable
+omarchy plugin add https://github.com/design-nexus/omarchy-control-panel.git --enable
 ```
 
 ## Usage
 
 Click the gear in the bar to open the window, or find it in the launcher as
-OmaSettings.
+Settings.
+
+## Credits and attribution
+
+This project is a fork and integration of existing Omarchy plugins. The
+settings foundation and much of the original settings UI are based on
+[OmaSettings](https://github.com/twiking/omasettings) by **Tobias Wiking**.
+The speaker measurement, calibration, correction, and verification engine and
+its detailed calibration panel are based on the
+[Speaker Calibrator](https://github.com/thefreshoffice/omarchy-speaker-calibrator)
+plugin by **Michael de By**. Their MIT-licensed work remains credited here;
+please refer to the upstream projects for their original history and notices.
 
 ## How it writes
 
@@ -85,7 +96,7 @@ Nothing here needs root, and nothing is installed on your behalf.
 ## Remove
 
 ```sh
-omarchy plugin remove io.github.twiking.omasettings
+omarchy plugin remove design-nexus.settings
 ```
 
 The launcher entry it wrote is deleted with it.
