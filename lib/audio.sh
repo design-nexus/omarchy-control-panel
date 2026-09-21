@@ -110,39 +110,32 @@ audio_watch() {
       done
 }
 
-# The preamp is deliberately separate from volume and calibration.  It only
-# changes the two linear nodes placed before the measured correction; the
-# limiter remains the final node in the generated chain.
+# The preamp is deliberately separate from calibration.  It is a persistent
+# system gain offset applied to the current PipeWire/PulseAudio default sink;
+# calibration may be enabled, disabled, or replaced without changing it.
+PREAMP_FILE="$HOME_DIR/.config/omarchy/settings-preamp-db"
+
 audio_preamp_db() {
-  local fragment="$HOME_DIR/.config/pipewire/omarchy-speaker-tuning.conf.d/90-tuning.conf"
-  [[ -f $fragment ]] || die "no calibrated speaker chain is installed"
-  python3 - "$fragment" "$1" <<'PY'
-import math, pathlib, re, sys
-path, raw = pathlib.Path(sys.argv[1]), sys.argv[2]
-try: value = int(raw)
-except ValueError: raise SystemExit("preamp must be an integer")
-if value < 0 or value > 36 or value % 3: raise SystemExit("preamp must be 0..36 dB in 3 dB steps")
-text = path.read_text()
-factor = f"{10 ** (value / 20):.6f}"
-text, left = re.subn(r'(name = preamp_l label = linear control = \{ "Mult" = )[^ ]+', r'\g<1>' + factor, text, count=1)
-text, right = re.subn(r'(name = preamp_r label = linear control = \{ "Mult" = )[^ ]+', r'\g<1>' + factor, text, count=1)
-if left != 1 or right != 1: raise SystemExit("calibrated chain has no compatible preamp")
-tmp = path.with_suffix(path.suffix + ".settings.tmp")
-tmp.write_text(text)
-tmp.replace(path)
-PY
-  systemctl --user restart omarchy-speaker-tuning.service >/dev/null 2>&1 || die "could not restart calibrated audio"
+  local value=${1:-} old=0 delta delta_arg
+  [[ $value =~ ^[0-9]+$ ]] || die "preamp must be an integer"
+  (( value >= 0 && value <= 36 && value % 3 == 0 )) || die "preamp must be 0..36 dB in 3 dB steps"
+  [[ -f $PREAMP_FILE ]] && old=$(head -n1 "$PREAMP_FILE" 2>/dev/null)
+  [[ $old =~ ^[0-9]+$ ]] || old=0
+  delta=$((value - old))
+  if (( delta != 0 )); then
+    delta_arg="${delta}dB"
+    (( delta > 0 )) && delta_arg="+${delta}dB"
+    pactl set-sink-volume @DEFAULT_SINK@ "$delta_arg" >/dev/null 2>&1 \
+      || die "could not apply the global preamp"
+  fi
+  printf '%s\n' "$value" | write_file "$PREAMP_FILE" managed \
+    || die "could not save the global preamp"
 }
 
 audio_preamp_state() {
-  local fragment="$HOME_DIR/.config/pipewire/omarchy-speaker-tuning.conf.d/90-tuning.conf" mult
-  [[ -f $fragment ]] || { echo null; return; }
-  mult=$(sed -n 's/.*name = preamp_l label = linear control = { "Mult" = \([0-9.]*\).*/\1/p' "$fragment" | head -1)
-  python3 - "$mult" <<'PY'
-import math, sys
-try: print(round(20 * math.log10(float(sys.argv[1]))))
-except Exception: print('null')
-PY
+  local value
+  value=$(head -n1 "$PREAMP_FILE" 2>/dev/null || true)
+  [[ $value =~ ^[0-9]+$ ]] && printf '%s\n' "$value" || printf '0\n'
 }
 
 # Switching the default alone leaves whatever is already playing on the old

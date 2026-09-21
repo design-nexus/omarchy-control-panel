@@ -40,7 +40,7 @@ Ui.SectionBody {
     Ui.NumberRow {
       label: "Preamp boost"
       description: "Gain before the protected calibration and final limiter; it does not change master volume or the measured EQ."
-      value: audio.preampDb !== undefined ? Number(audio.preampDb) : 18; from: 0; to: 36; step: 3; suffix: "dB"
+      value: audio.preampDb !== undefined && audio.preampDb !== null ? Number(audio.preampDb) : 18; from: 0; to: 36; step: 3; suffix: "dB"
       onCommitted: function(next) { app.run(["audio", "preamp", String(next)]) }
     }
     Ui.ReadingRow {
