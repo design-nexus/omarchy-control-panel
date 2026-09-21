@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 
 // The plugin's always-on half: it owns the settings window and the IPC route
 // that opens it, and installs the launcher entry.
@@ -21,6 +22,51 @@ import Quickshell.Io
 // deleted: an entry you wrote yourself at that path is left alone.
 Scope {
   id: root
+
+  // The timeout formerly lived in a separate plugin.  Settings now owns the
+  // one active controller and reads the same durable ASUS preferences used by
+  // its Aura page.
+  property int backlightTimeoutSeconds: 30
+  property int savedBrightness: -1
+  property bool backlightTimedOut: false
+
+  Process {
+    id: timeoutReader
+    command: ["sh", "-c", "jq -r '.backlightTimeout // 30' \"$HOME/.config/omarchy/asus-g16/settings.json\" 2>/dev/null || echo 30"]
+    stdout: SplitParser { onRead: function(line) { var n = Number(String(line).trim()); if (n >= 0 && n <= 600) root.backlightTimeoutSeconds = n } }
+  }
+
+  function turnBacklightOff() { if (!backlightRead.running && !backlightTimedOut) backlightRead.running = true }
+  function restoreBacklight() {
+    if (!backlightTimedOut) return
+    if (savedBrightness > 0 && !backlightRestore.running) {
+      backlightRestore.command = ["brightnessctl", "-d", "asus::kbd_backlight", "set", String(savedBrightness)]
+      backlightRestore.running = true
+    }
+    backlightTimedOut = false
+    savedBrightness = -1
+  }
+
+  // Wayland idle objects require an Item parent; the plugin service itself is
+  // a Scope because it also owns IPC and the lazy window loader.
+  Item {
+    visible: false
+    IdleMonitor {
+      id: keyboardIdle
+      timeout: root.backlightTimeoutSeconds
+      respectInhibitors: false
+      onIsIdleChanged: { if (isIdle && root.backlightTimeoutSeconds > 0) root.turnBacklightOff(); else root.restoreBacklight() }
+    }
+  }
+  Process {
+    id: backlightRead
+    command: ["brightnessctl", "-d", "asus::kbd_backlight", "get"]
+    stdout: SplitParser { onRead: function(line) { var n = Number(String(line).trim()); if (n > 0 && n <= 3) root.savedBrightness = n } }
+    onExited: function() { if (root.savedBrightness > 0) { root.backlightTimedOut = true; backlightOff.running = true } }
+  }
+  Process { id: backlightOff; command: ["brightnessctl", "-d", "asus::kbd_backlight", "set", "0"] }
+  Process { id: backlightRestore; command: ["brightnessctl", "-d", "asus::kbd_backlight", "set", "1"] }
+  Component.onCompleted: timeoutReader.running = true
 
   property string omarchyPath: ""
   property var shell: null
@@ -59,15 +105,23 @@ Scope {
     if (opened) hide()
     else show()
   }
+  // The complete calibration panel is vendored with Settings.  It keeps the
+  // original measurement, curve, profile comparison and verification UI, but
+  // no longer needs the separate calibration plugin to be enabled.
+  function openCalibration() {
+    calibrationLoader.active = true
+    if (calibrationLoader.item) calibrationLoader.item.open()
+  }
 
   IpcHandler {
-    target: "omasettings"
+    target: "design-nexus.settings"
     function show(): void { root.show() }
     function showPage(page: string): void { root.showPage(page) }
     function hide(): void { root.hide() }
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function openCalibration(): void { root.openCalibration() }
   }
 
   Loader {
@@ -81,10 +135,18 @@ Scope {
     }
   }
 
+  Loader {
+    id: calibrationLoader
+    active: false
+    asynchronous: true
+    source: Qt.resolvedUrl("audio_calibration/Panel.qml")
+    onLoaded: if (item) item.open()
+  }
+
   // ---------------- launcher entry -----------------------------------------
 
-  readonly property string dest: Quickshell.env("HOME") + "/.local/share/applications/omasettings.desktop"
-  readonly property string marker: "^X-OmaSettings-Managed=true$"
+  readonly property string dest: Quickshell.env("HOME") + "/.local/share/applications/settings.desktop"
+  readonly property string marker: "^X-Settings-Managed=true$"
 
   // $1 template, $2 destination, $3 marker, $4 icon. Every failure is a quiet
   // exit: a launcher entry is a convenience, and nothing here is worth
@@ -117,7 +179,7 @@ Scope {
     if (installed || !dir) return
     installed = true
     Quickshell.execDetached(["sh", "-c", installScript, "sh",
-                             dir + "/omasettings.desktop", dest, marker, dir + "/icon.png"])
+                             dir + "/settings.desktop", dest, marker, dir + "/icon.png"])
   }
 
   // Reached on disable and on remove alike: omarchy-plugin-remove disables

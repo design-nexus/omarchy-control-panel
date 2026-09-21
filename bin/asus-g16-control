@@ -1,0 +1,632 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONTROL_PATH="$(realpath -- "${BASH_SOURCE[0]}")"
+STATE_DIR="$CONFIG_ROOT/omarchy/asus-g16"
+SETTINGS="$STATE_DIR/settings.json"
+HYPR_DIR="$CONFIG_ROOT/hypr"
+HYPR_MAIN="$HYPR_DIR/hyprland.lua"
+HYPR_MODULE="$HYPR_DIR/asus-g16.lua"
+REQUIRE_LINE='require("hypr.asus-g16")'
+ARMOURY_SYSFS="/sys/class/firmware-attributes/asus-armoury/attributes"
+WORKSPACE_MIN=1
+WORKSPACE_MAX=5
+
+die() {
+  printf 'asus-g16-control: %s\n' "$*" >&2
+  exit 1
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+defaults() {
+  jq -n '{
+    touchpad: {
+      enabled: true,
+      naturalScroll: false,
+      scrollFactor: 0.4,
+      sensitivity: 0.0,
+      tapToClick: true,
+      tapMap: "lrm",
+      clickfinger: true,
+      disableWhileTyping: true,
+      dragLock: false,
+      middleButtonEmulation: false
+    },
+    gestures: {
+      threeHorizontal: "workspace",
+      threeUp: "launcher",
+      threeDown: "special-workspace",
+      fourLeft: "previous-workspace",
+      fourRight: "next-workspace",
+      fourUp: "fullscreen",
+      fourDown: "none"
+    },
+    keys: {
+      m1: "volume-down",
+      m2: "volume-up",
+      m3: "mic-mute",
+      m4: "control-panel",
+      copilot: "codex"
+    },
+    keyCommands: {
+      m1: "", m2: "", m3: "", m4: "", copilot: ""
+    },
+    keyCombos: {
+      m1: "", m2: "", m3: "", m4: "", copilot: ""
+    },
+    slash: {
+      enabled: false,
+      brightness: 255,
+      interval: 0,
+      mode: "Bounce",
+      showOnBoot: true,
+      showOnShutdown: true,
+      showOnSleep: true,
+      showOnBattery: true,
+      showBatteryWarning: true,
+      color: "7c3aed"
+    },
+    aura: {
+      effect: "static",
+      primaryColor: "7c3aed",
+      secondaryColor: "00d4ff",
+      speed: "med",
+      direction: "right"
+    },
+    backlightTimeout: 30
+  }'
+}
+
+ensure_settings() {
+  need jq
+  mkdir -p "$STATE_DIR"
+  if [[ ! -f $SETTINGS ]]; then
+    defaults >"$SETTINGS"
+    return
+  fi
+
+  local merged tmp
+  tmp=$(mktemp "$STATE_DIR/settings.XXXXXX")
+  merged=$(jq -s '.[0] * .[1]' <(defaults) "$SETTINGS") || {
+    rm -f "$tmp"
+    die "settings file is not valid JSON: $SETTINGS"
+  }
+  printf '%s\n' "$merged" >"$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$SETTINGS"
+}
+
+json_value() {
+  local raw="$1"
+  jq -n --arg value "$raw" '
+    if $value == "true" then true
+    elif $value == "false" then false
+    elif ($value | test("^-?[0-9]+([.][0-9]+)?$")) then ($value | tonumber)
+    else $value
+    end
+  '
+}
+
+validate_setting() {
+  local path="$1" value="$2"
+  case "$path" in
+    touchpad.enabled|touchpad.naturalScroll|touchpad.tapToClick|touchpad.clickfinger|touchpad.disableWhileTyping|touchpad.dragLock|touchpad.middleButtonEmulation)
+      [[ $value == true || $value == false ]] || die "$path expects true or false"
+      ;;
+    touchpad.scrollFactor)
+      awk -v n="$value" 'BEGIN { exit !(n >= 0.1 && n <= 2.0) }' || die "scroll factor must be 0.1..2.0"
+      ;;
+    touchpad.sensitivity)
+      awk -v n="$value" 'BEGIN { exit !(n >= -1.0 && n <= 1.0) }' || die "sensitivity must be -1.0..1.0"
+      ;;
+    touchpad.tapMap)
+      [[ $value == lrm || $value == lmr ]] || die "tap map must be lrm or lmr"
+      ;;
+    gestures.*)
+      case "$value" in
+        none|workspace|launcher|special-workspace|previous-workspace|next-workspace|focus-left|focus-right|fullscreen|close-window|play-pause|screenshot) ;;
+        *) die "unsupported gesture action: $value" ;;
+      esac
+      ;;
+    keys.m1|keys.m2|keys.m3|keys.m4|keys.copilot)
+      case "$value" in
+        disabled|volume-down|volume-up|volume-mute|mic-mute|keyboard-light-cycle|control-panel|launcher|terminal|browser|screenshot|play-pause|codex|custom-command|key-combo) ;;
+        *) die "unsupported key action: $value" ;;
+      esac
+      ;;
+    keyCommands.m1|keyCommands.m2|keyCommands.m3|keyCommands.m4|keyCommands.copilot)
+      (( ${#value} <= 512 )) || die "custom command must be at most 512 characters"
+      [[ $value != *$'\n'* && $value != *$'\r'* ]] || die "custom command must be one line"
+      ;;
+    keyCombos.m1|keyCombos.m2|keyCombos.m3|keyCombos.m4|keyCombos.copilot)
+      [[ -z $value || $value =~ ^[A-Za-z0-9_:.-]+([[:space:]]*\+[[:space:]]*[A-Za-z0-9_:.-]+)*$ ]] ||
+        die "key combo must look like CTRL + SHIFT + T"
+      ;;
+    slash.enabled|slash.showOnBoot|slash.showOnShutdown|slash.showOnSleep|slash.showOnBattery|slash.showBatteryWarning)
+      [[ $value == true || $value == false ]] || die "$path expects true or false"
+      ;;
+    slash.brightness)
+      [[ $value =~ ^[0-9]+$ ]] && (( value >= 0 && value <= 255 )) || die "Slash brightness must be 0..255"
+      ;;
+    slash.interval)
+      [[ $value =~ ^[0-9]+$ ]] && (( value >= 0 && value <= 5 )) || die "Slash interval must be 0..5"
+      ;;
+    slash.mode)
+      case "$value" in
+        Static|Bounce|Slash|Loading|BitStream|Transmission|Flow|Flux|Phantom|Spectrum|Hazard|Interfacing|Ramp|GameOver|Start|Buzzer) ;;
+        *) die "unsupported Slash animation: $value" ;;
+      esac
+      ;;
+    slash.color)
+      [[ $value =~ ^[[:xdigit:]]{6}$ ]] || die "Slash color must be six hex digits"
+      ;;
+    aura.effect)
+      [[ $value == static || $value == breathe || $value == rainbow-wave ]] || die "unsupported Aura effect"
+      ;;
+    aura.primaryColor|aura.secondaryColor)
+      [[ $value =~ ^[[:xdigit:]]{6}$ ]] || die "Aura color must be six hex digits"
+      ;;
+    aura.speed)
+      [[ $value == low || $value == med || $value == high ]] || die "Aura speed must be low, med, or high"
+      ;;
+    aura.direction)
+      [[ $value == up || $value == down || $value == left || $value == right ]] || die "invalid Aura direction"
+      ;;
+    backlightTimeout)
+      [[ $value =~ ^[0-9]+$ ]] && (( value >= 0 && value <= 600 )) || die "backlight timeout must be 0..600 seconds"
+      ;;
+    *) die "unknown setting: $path" ;;
+  esac
+}
+
+set_setting() {
+  local path="$1" raw="$2" parsed tmp
+  validate_setting "$path" "$raw"
+  ensure_settings
+  parsed=$(json_value "$raw")
+  tmp=$(mktemp "$STATE_DIR/settings.XXXXXX")
+  jq --arg path "$path" --argjson value "$parsed" \
+    'setpath($path | split("."); $value)' "$SETTINGS" >"$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$SETTINGS"
+  [[ $path == slash.* ]] || generate_hyprland
+}
+
+lua_bool() {
+  [[ $1 == true ]] && printf true || printf false
+}
+
+action_command() {
+  case "$1" in
+    volume-down) printf 'omarchy-audio-output-volume lower' ;;
+    volume-up) printf 'omarchy-audio-output-volume raise' ;;
+    volume-mute) printf 'omarchy-audio-output-volume mute-toggle' ;;
+    mic-mute) printf 'omarchy-audio-input-mute' ;;
+    keyboard-light-cycle) printf 'omarchy-brightness-keyboard cycle' ;;
+    control-panel) printf 'omarchy-shell shell toggle asus.rog-g16' ;;
+    launcher) printf 'omarchy-menu toggle root' ;;
+    terminal) printf 'xdg-terminal-exec' ;;
+    browser) printf 'omarchy-launch-browser' ;;
+    screenshot) printf 'omarchy capture screenshot' ;;
+    play-pause) printf 'omarchy-shell media playPause' ;;
+    codex) printf 'xdg-terminal-exec -e codex' ;;
+    previous-workspace) printf 'hyprctl dispatch workspace e-1' ;;
+    next-workspace) printf 'hyprctl dispatch workspace e+1' ;;
+    focus-left) printf 'hyprctl dispatch movefocus l' ;;
+    focus-right) printf 'hyprctl dispatch movefocus r' ;;
+    special-workspace) printf 'hyprctl dispatch togglespecialworkspace' ;;
+    fullscreen) printf 'hyprctl dispatch fullscreen 1' ;;
+    close-window) printf 'hyprctl dispatch killactive' ;;
+    *) return 1 ;;
+  esac
+}
+
+emit_key() {
+  local json_key="$1" chord="$2" label="$3" action command combo keypart mods part index
+  local -a combo_parts
+  action=$(jq -r --arg key "$json_key" '.keys[$key]' "$SETTINGS")
+  printf 'hl.unbind("%s")\n' "$chord"
+  [[ $action != disabled ]] || return 0
+
+  if [[ $action == custom-command ]]; then
+    command=$(jq -r --arg key "$json_key" '.keyCommands[$key] // ""' "$SETTINGS")
+    [[ -n $command ]] || return 0
+    printf 'o.bind("%s", "%s custom command", %s)\n' "$chord" "$label" "$(jq -Rn --arg s "$command" '$s')"
+    return 0
+  fi
+
+  if [[ $action == key-combo ]]; then
+    combo=$(jq -r --arg key "$json_key" '.keyCombos[$key] // ""' "$SETTINGS")
+    [[ -n $combo ]] || return 0
+    IFS='+' read -ra combo_parts <<<"$combo"
+    index=$((${#combo_parts[@]} - 1))
+    keypart=$(trim_space "${combo_parts[$index]}")
+    mods=""
+    for (( index = 0; index < ${#combo_parts[@]} - 1; index++ )); do
+      part=$(trim_space "${combo_parts[$index]}")
+      mods+="${mods:+ }$part"
+    done
+    printf 'o.bind("%s", "%s key combo", function() hl.dispatch(hl.dsp.send_shortcut({ mods = %s, key = %s })) end)\n' \
+      "$chord" "$label" "$(jq -Rn --arg s "$mods" '$s')" "$(jq -Rn --arg s "$keypart" '$s')"
+    return 0
+  fi
+
+  command=$(action_command "$action") || return 0
+  printf 'o.bind("%s", "%s", %s)\n' "$chord" "$label" "$(jq -Rn --arg s "$command" '$s')"
+}
+
+trim_space() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+emit_gesture() {
+  local fingers="$1" direction="$2" key="$3" action command
+  action=$(jq -r --arg key "$key" '.gestures[$key]' "$SETTINGS")
+  [[ $action != none ]] || return 0
+  case "$action" in
+    workspace)
+      # This setup exposes numbered workspaces 1..5. Use the controller so the
+      # gesture can wrap at either end instead of creating workspace 0 or 6.
+      if [[ $direction == horizontal ]]; then
+        printf -v command '%q workspace-cycle previous' "$CONTROL_PATH"
+        printf 'hl.gesture({ fingers = %s, direction = "left", action = function() hl.exec_cmd(%s) end })\n' \
+          "$fingers" "$(jq -Rn --arg s "$command" '$s')"
+        printf -v command '%q workspace-cycle next' "$CONTROL_PATH"
+        printf 'hl.gesture({ fingers = %s, direction = "right", action = function() hl.exec_cmd(%s) end })\n' \
+          "$fingers" "$(jq -Rn --arg s "$command" '$s')"
+      else
+        printf 'hl.gesture({ fingers = %s, direction = "%s", action = "workspace" })\n' "$fingers" "$direction"
+      fi
+      ;;
+    previous-workspace)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = function() hl.dispatch(hl.dsp.focus({ workspace = "-1" })) end })\n' "$fingers" "$direction"
+      ;;
+    next-workspace)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = function() hl.dispatch(hl.dsp.focus({ workspace = "+1" })) end })\n' "$fingers" "$direction"
+      ;;
+    focus-left)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = function() hl.dispatch(hl.dsp.focus({ direction = "l" })) end })\n' "$fingers" "$direction"
+      ;;
+    focus-right)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = function() hl.dispatch(hl.dsp.focus({ direction = "r" })) end })\n' "$fingers" "$direction"
+      ;;
+    fullscreen)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = "fullscreen" })\n' "$fingers" "$direction"
+      ;;
+    close-window)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = "close" })\n' "$fingers" "$direction"
+      ;;
+    special-workspace)
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = "special", workspace_name = "scratchpad" })\n' "$fingers" "$direction"
+      ;;
+    *)
+      command=$(action_command "$action") || return 0
+      printf 'hl.gesture({ fingers = %s, direction = "%s", action = function() hl.exec_cmd(%s) end })\n' \
+        "$fingers" "$direction" "$(jq -Rn --arg s "$command" '$s')"
+      ;;
+  esac
+}
+
+workspace_cycle() {
+  local direction="${1:-}" active target expression
+  [[ $direction == next || $direction == previous ]] ||
+    die "workspace-cycle expects next or previous"
+  need hyprctl
+  need jq
+
+  active=$(hyprctl activeworkspace -j | jq -er '.id | select(type == "number")') ||
+    die "could not determine the active workspace"
+
+  case "$direction" in
+    next)
+      if (( active < WORKSPACE_MIN || active >= WORKSPACE_MAX )); then
+        target=$WORKSPACE_MIN
+      else
+        target=$((active + 1))
+      fi
+      ;;
+    previous)
+      if (( active <= WORKSPACE_MIN || active > WORKSPACE_MAX )); then
+        target=$WORKSPACE_MAX
+      else
+        target=$((active - 1))
+      fi
+      ;;
+  esac
+
+  printf -v expression 'hl.dsp.focus({ workspace = "%d" })' "$target"
+  hyprctl dispatch "$expression" >/dev/null
+}
+
+ensure_loader() {
+  mkdir -p "$HYPR_DIR"
+  [[ -f $HYPR_MAIN ]] || die "Hyprland config not found: $HYPR_MAIN"
+  grep -Fqx "$REQUIRE_LINE" "$HYPR_MAIN" && return
+
+  cp "$HYPR_MAIN" "$HYPR_MAIN.bak.asus-g16"
+  local tmp
+  tmp=$(mktemp "$HYPR_DIR/hyprland.lua.XXXXXX")
+  awk -v line="$REQUIRE_LINE" '
+    !done && /require\("default\.hypr\.toggles"\)/ { print line; print ""; done=1 }
+    { print }
+    END { if (!done) { print ""; print line } }
+  ' "$HYPR_MAIN" >"$tmp"
+  mv "$tmp" "$HYPR_MAIN"
+}
+
+generate_hyprland() {
+  ensure_settings
+  ensure_loader
+
+  local enabled natural scroll sensitivity tap tap_map clickfinger dwt draglock middle tmp
+  enabled=$(jq -r '.touchpad.enabled' "$SETTINGS")
+  natural=$(jq -r '.touchpad.naturalScroll' "$SETTINGS")
+  scroll=$(jq -r '.touchpad.scrollFactor' "$SETTINGS")
+  sensitivity=$(jq -r '.touchpad.sensitivity' "$SETTINGS")
+  tap=$(jq -r '.touchpad.tapToClick' "$SETTINGS")
+  tap_map=$(jq -r '.touchpad.tapMap' "$SETTINGS")
+  clickfinger=$(jq -r '.touchpad.clickfinger' "$SETTINGS")
+  dwt=$(jq -r '.touchpad.disableWhileTyping' "$SETTINGS")
+  draglock=$(jq -r '.touchpad.dragLock' "$SETTINGS")
+  middle=$(jq -r '.touchpad.middleButtonEmulation' "$SETTINGS")
+
+  tmp=$(mktemp "$HYPR_DIR/asus-g16.lua.XXXXXX")
+  {
+    printf '%s\n' '-- Generated by the asus.rog-g16 Omarchy plugin.'
+    printf '%s\n' '-- Edit settings through the plugin; manual changes are overwritten.'
+    printf 'hl.config({ input = { sensitivity = %s, touchpad = {\n' "$sensitivity"
+    printf '  natural_scroll = %s,\n' "$(lua_bool "$natural")"
+    printf '  scroll_factor = %s,\n' "$scroll"
+    printf '  tap_to_click = %s,\n' "$(lua_bool "$tap")"
+    printf '  tap_button_map = "%s",\n' "$tap_map"
+    printf '  clickfinger_behavior = %s,\n' "$(lua_bool "$clickfinger")"
+    printf '  disable_while_typing = %s,\n' "$(lua_bool "$dwt")"
+    printf '  drag_lock = %s,\n' "$(lua_bool "$draglock")"
+    printf '  middle_button_emulation = %s,\n' "$(lua_bool "$middle")"
+    printf '%s\n' '} } })'
+    if [[ $enabled == false ]]; then
+      printf '%s\n' 'hl.device({ name = "asup1207:00-093a:3012-touchpad", enabled = false })'
+    fi
+    printf '\n%s\n' '-- Three-finger taps use libinput tap_button_map: lrm = right click; lmr = middle click.'
+    printf '%s\n' '-- Four-finger tap is not emitted by libinput on this touchpad; use a four-finger swipe instead.'
+    emit_gesture 3 horizontal threeHorizontal
+    emit_gesture 3 up threeUp
+    emit_gesture 3 down threeDown
+    emit_gesture 4 left fourLeft
+    emit_gesture 4 right fourRight
+    emit_gesture 4 up fourUp
+    emit_gesture 4 down fourDown
+    printf '\n%s\n' '-- ASUS M keys and Copilot key.'
+    emit_key m1 XF86AudioLowerVolume 'ROG M1'
+    emit_key m2 XF86AudioRaiseVolume 'ROG M2'
+    emit_key m3 XF86AudioMicMute 'ROG M3'
+    emit_key m4 XF86Launch1 'ROG M4'
+    # Omarchy binds this hardware key as code:201. Remove both aliases so a
+    # single press cannot launch both the selected action and the root menu.
+    printf '%s\n' 'hl.unbind("SUPER + SHIFT + F23")'
+    emit_key copilot 'SUPER + SHIFT + code:201' 'Copilot key'
+  } >"$tmp"
+  mv "$tmp" "$HYPR_MODULE"
+
+  if command -v hyprctl >/dev/null 2>&1; then
+    hyprctl reload >/dev/null 2>&1 || true
+  fi
+}
+
+state() {
+  ensure_settings
+  local product family board version profiles profile battery led led_level
+  local boot dgpu mux overdrive dynamic_boost temp_target tgp pl1 pl2
+  product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
+  family=$(cat /sys/class/dmi/id/product_family 2>/dev/null || true)
+  board=$(cat /sys/class/dmi/id/board_name 2>/dev/null || true)
+
+  # Prefer kernel state for frequently refreshed values. It is immediate and
+  # avoids five extra D-Bus round-trips through asusd.
+  version=$(pacman -Q asusctl 2>/dev/null | awk '{ print $2 }')
+  version=${version%-*}
+  profiles='["Quiet","Balanced","Performance"]'
+  profile=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || true)
+  case "$profile" in
+    quiet) profile=Quiet ;;
+    balanced) profile=Balanced ;;
+    performance) profile=Performance ;;
+  esac
+  battery=$(cat /sys/class/power_supply/BAT1/charge_control_end_threshold 2>/dev/null || true)
+  led_level=$(cat '/sys/class/leds/asus::kbd_backlight/brightness' 2>/dev/null || true)
+  case "$led_level" in
+    0) led=off ;;
+    1) led=low ;;
+    2) led=med ;;
+    3) led=high ;;
+    *) led=unknown ;;
+  esac
+  boot=$(cat "$ARMOURY_SYSFS/boot_sound/current_value" 2>/dev/null || true)
+  dgpu=$(cat "$ARMOURY_SYSFS/dgpu_disable/current_value" 2>/dev/null || true)
+  mux=$(cat "$ARMOURY_SYSFS/gpu_mux_mode/current_value" 2>/dev/null || true)
+  overdrive=$(cat "$ARMOURY_SYSFS/panel_overdrive/current_value" 2>/dev/null || true)
+  dynamic_boost=$(cat "$ARMOURY_SYSFS/nv_dynamic_boost/current_value" 2>/dev/null || true)
+  temp_target=$(cat "$ARMOURY_SYSFS/nv_temp_target/current_value" 2>/dev/null || true)
+  tgp=$(cat "$ARMOURY_SYSFS/nv_tgp/current_value" 2>/dev/null || true)
+  pl1=$(cat "$ARMOURY_SYSFS/ppt_pl1_spl/current_value" 2>/dev/null || true)
+  pl2=$(cat "$ARMOURY_SYSFS/ppt_pl2_sppt/current_value" 2>/dev/null || true)
+
+  [[ -n $version ]] || version=null
+  [[ -n $profile ]] || profile=unknown
+  [[ -n $battery ]] || battery=100
+  [[ -n $led ]] || led=unknown
+  [[ $profiles != '[]' ]] || profiles='["Quiet","Balanced","Performance"]'
+
+  jq -n \
+    --slurpfile config "$SETTINGS" \
+    --arg product "$product" --arg family "$family" --arg board "$board" \
+    --arg version "$version" --arg profile "$profile" --arg led "$led" \
+    --argjson profiles "$profiles" --argjson battery "$battery" \
+    --argjson hasBoot "$([[ -r $ARMOURY_SYSFS/boot_sound/current_value ]] && printf true || printf false)" \
+    --argjson hasDgpu "$([[ -r $ARMOURY_SYSFS/dgpu_disable/current_value ]] && printf true || printf false)" \
+    --argjson hasMux "$([[ -r $ARMOURY_SYSFS/gpu_mux_mode/current_value ]] && printf true || printf false)" \
+    --argjson hasOverdrive "$([[ -r $ARMOURY_SYSFS/panel_overdrive/current_value ]] && printf true || printf false)" \
+    --argjson hasDynamicBoost "$([[ -r $ARMOURY_SYSFS/nv_dynamic_boost/current_value ]] && printf true || printf false)" \
+    --argjson hasTempTarget "$([[ -r $ARMOURY_SYSFS/nv_temp_target/current_value ]] && printf true || printf false)" \
+    --argjson hasTgp "$([[ -r $ARMOURY_SYSFS/nv_tgp/current_value ]] && printf true || printf false)" \
+    --argjson hasPl1 "$([[ -r $ARMOURY_SYSFS/ppt_pl1_spl/current_value ]] && printf true || printf false)" \
+    --argjson hasPl2 "$([[ -r $ARMOURY_SYSFS/ppt_pl2_sppt/current_value ]] && printf true || printf false)" \
+    --arg boot "$boot" \
+    --arg dgpu "$dgpu" \
+    --arg mux "$mux" \
+    --arg overdrive "$overdrive" \
+    --arg dynamicBoost "$dynamic_boost" \
+    --arg tempTarget "$temp_target" \
+    --arg tgp "$tgp" \
+    --arg pl1 "$pl1" \
+    --arg pl2 "$pl2" \
+    '{
+      device: { product: $product, family: $family, board: $board, asusctl: $version },
+      lighting: { brightness: $led },
+      power: { profile: $profile, profiles: $profiles, chargeLimit: $battery },
+      armoury: {
+        bootSound: { supported: $hasBoot, value: ($boot == "1") },
+        dgpuDisable: { supported: $hasDgpu, value: ($dgpu == "1") },
+        gpuMuxMode: { supported: $hasMux, value: ($mux == "1") },
+        panelOverdrive: { supported: $hasOverdrive, value: ($overdrive == "1") },
+        dynamicBoost: { supported: $hasDynamicBoost, value: (($dynamicBoost | tonumber?) // 20), min: 5, max: 20, unit: "W" },
+        tempTarget: { supported: $hasTempTarget, value: (($tempTarget | tonumber?) // 87), min: 75, max: 87, unit: "°C" },
+        tgp: { supported: $hasTgp, value: (($tgp | tonumber?) // 90), min: 80, max: 110, unit: "W" },
+        pl1: { supported: $hasPl1, value: (($pl1 | tonumber?) // 45), min: 45, max: 85, unit: "W" },
+        pl2: { supported: $hasPl2, value: (($pl2 | tonumber?) // 56), min: 56, max: 110, unit: "W" }
+      },
+      config: $config[0]
+    }'
+}
+
+set_armoury() {
+  local attr="$1" value="$2"
+  [[ $value =~ ^[0-9]+$ ]] || die "armoury values must be integers"
+  case "$attr" in
+    boot_sound|dgpu_disable|gpu_mux_mode|panel_overdrive)
+      (( value >= 0 && value <= 1 )) || die "$attr accepts 0 or 1"
+      ;;
+    nv_dynamic_boost) (( value >= 5 && value <= 20 )) || die "$attr must be 5..20" ;;
+    nv_temp_target) (( value >= 75 && value <= 87 )) || die "$attr must be 75..87" ;;
+    nv_tgp) (( value >= 80 && value <= 110 )) || die "$attr must be 80..110" ;;
+    ppt_pl1_spl) (( value >= 45 && value <= 85 )) || die "$attr must be 45..85" ;;
+    ppt_pl2_sppt) (( value >= 56 && value <= 110 )) || die "$attr must be 56..110" ;;
+    *) die "unsupported armoury attribute: $attr" ;;
+  esac
+  asusctl armoury set -- "$attr" "$value"
+}
+
+set_led_effect() {
+  local effect="${1:-}" colour="${2:-7c3aed}" colour2="${3:-00d4ff}" speed="${4:-med}" direction="${5:-right}"
+  [[ $colour =~ ^[[:xdigit:]]{6}$ ]] || die "primary colour must be six hex digits"
+  [[ $colour2 =~ ^[[:xdigit:]]{6}$ ]] || die "secondary colour must be six hex digits"
+  [[ $speed == low || $speed == med || $speed == high ]] || die "speed must be low, med, or high"
+  [[ $direction == up || $direction == down || $direction == left || $direction == right ]] || die "invalid direction"
+  case "$effect" in
+    static) asusctl aura effect static --colour "$colour" ;;
+    breathe) asusctl aura effect breathe --colour "$colour" --colour2 "$colour2" --speed "$speed" ;;
+    rainbow-wave) asusctl aura effect rainbow-wave --direction "$direction" --speed "$speed" ;;
+    *) die "effect must be static, breathe, or rainbow-wave" ;;
+  esac
+  set_setting "aura.effect" "$effect"
+  set_setting "aura.primaryColor" "$colour"
+  set_setting "aura.secondaryColor" "$colour2"
+  set_setting "aura.speed" "$speed"
+  set_setting "aura.direction" "$direction"
+}
+
+set_slash() {
+  local property="${1:-}" value="${2:-}"
+  validate_setting "slash.$property" "$value"
+  case "$property" in
+    enabled)
+      if [[ $value == true ]]; then asusctl slash set --enable
+      else asusctl slash set --disable
+      fi
+      ;;
+    color) set_setting "slash.color" "$value"; return ;;
+    brightness) asusctl slash set --brightness "$value" ;;
+    interval) asusctl slash set --interval "$value" ;;
+    mode) asusctl slash set --mode "$value" ;;
+    showOnBoot) asusctl slash set --show-on-boot "$value" ;;
+    showOnShutdown) asusctl slash set --show-on-shutdown "$value" ;;
+    showOnSleep) asusctl slash set --show-on-sleep "$value" ;;
+    showOnBattery) asusctl slash set --show-on-battery "$value" ;;
+    showBatteryWarning) asusctl slash set --show-battery-warning "$value" ;;
+    *) die "unknown Slash setting: $property" ;;
+  esac
+  set_setting "slash.$property" "$value"
+}
+
+doctor() {
+  local failed=0
+  printf 'Device: %s / %s\n' "$(cat /sys/class/dmi/id/product_name 2>/dev/null || printf unknown)" "$(cat /sys/class/dmi/id/board_name 2>/dev/null || printf unknown)"
+  for command in asusctl jq hyprctl omarchy-shell; do
+    if command -v "$command" >/dev/null 2>&1; then
+      printf 'OK   %s\n' "$command"
+    else
+      printf 'MISS %s\n' "$command"
+      failed=1
+    fi
+  done
+  [[ -f $HYPR_MODULE ]] && printf 'OK   %s\n' "$HYPR_MODULE" || printf 'INFO Hyprland module is generated on first setting change\n'
+  return "$failed"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: asus-g16-control COMMAND [ARGS]
+
+  state
+  install-config
+  set SETTING-PATH VALUE
+  set-led-brightness off|low|med|high
+  set-led-effect static|breathe|rainbow-wave [colour] [colour2] [speed] [direction]
+  set-slash PROPERTY VALUE
+  set-profile Quiet|Balanced|Performance
+  set-charge-limit 20..100
+  set-armoury ATTRIBUTE 0|1
+  workspace-cycle next|previous
+  doctor
+EOF
+}
+
+main() {
+  local command="${1:-help}"
+  shift || true
+  case "$command" in
+    state) state ;;
+    install-config) generate_hyprland ;;
+    set) [[ $# == 2 ]] || die "set expects PATH VALUE"; set_setting "$1" "$2" ;;
+    set-led-brightness)
+      [[ ${1:-} == off || ${1:-} == low || ${1:-} == med || ${1:-} == high ]] || die "invalid LED brightness"
+      asusctl leds set "$1"
+      ;;
+    set-led-effect) set_led_effect "$@" ;;
+    set-slash) [[ $# == 2 ]] || die "set-slash expects PROPERTY VALUE"; set_slash "$1" "$2" ;;
+    set-profile)
+      [[ ${1:-} == Quiet || ${1:-} == Balanced || ${1:-} == Performance ]] || die "invalid performance profile"
+      asusctl profile set "$1"
+      ;;
+    set-charge-limit)
+      [[ ${1:-} =~ ^[0-9]+$ ]] || die "charge limit must be an integer"
+      (( $1 >= 20 && $1 <= 100 )) || die "charge limit must be 20..100"
+      asusctl battery limit "$1"
+      ;;
+    set-armoury) [[ $# == 2 ]] || die "set-armoury expects ATTRIBUTE VALUE"; set_armoury "$1" "$2" ;;
+    workspace-cycle) [[ $# == 1 ]] || die "workspace-cycle expects next or previous"; workspace_cycle "$1" ;;
+    doctor) doctor ;;
+    help|-h|--help) usage ;;
+    *) usage >&2; exit 2 ;;
+  esac
+}
+
+main "$@"

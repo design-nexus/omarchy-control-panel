@@ -10,7 +10,7 @@ import qs.Ui
 // and nothing else.
 BarWidget {
   id: root
-  moduleName: "io.github.twiking.omasettings"
+  moduleName: "design-nexus.settings"
 
   readonly property var service: bar && bar.shell && typeof bar.shell.serviceFor === "function"
     ? bar.shell.serviceFor(moduleName) : null

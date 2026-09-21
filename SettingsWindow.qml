@@ -86,6 +86,7 @@ Item {
   property var audioLive: null
   readonly property var audio: audioLive !== null ? audioLive
     : (state.audio !== undefined ? state.audio : ({}))
+  readonly property var asus: state.asus !== undefined ? state.asus : ({})
 
   Process {
     id: audioWatchProcess
@@ -774,6 +775,8 @@ Item {
       case "wifi": return ["wifi"]
       case "bluetooth": return ["bluetooth"]
       case "audio": return ["audio"]
+      case "calibration": return ["audio"]
+      case "asus": return ["asus"]
       case "power": return ["power"]
       case "set": return slicesForKey(args.length > 1 ? args[1] : "")
     }
@@ -938,6 +941,9 @@ Item {
     // Devices
     { id: "displays", title: "Displays", icon: "\uf108" },
     { id: "audio", title: "Audio", icon: "\uf028" },
+    { id: "calibration", title: "Speaker Calibration", icon: "\uf130" },
+    { id: "aura", title: "Aura Lighting", icon: "\uf0eb" },
+    { id: "asus", title: "ASUS ROG", icon: "\uf085" },
     { id: "network", title: "Network", icon: "\uf1eb" },
     { id: "bluetooth", title: "Bluetooth", icon: "\uf294" },
     { id: "power", title: "Power", icon: "\uf0e7" },
@@ -1053,6 +1059,9 @@ Item {
     case "groups": return "sections/GroupsSection.qml"
     case "power": return "sections/PowerSection.qml"
     case "audio": return "sections/AudioSection.qml"
+    case "calibration": return "sections/CalibrationSection.qml"
+    case "aura": return "sections/AuraSection.qml"
+    case "asus": return "sections/AsusSection.qml"
     case "apps.defaults": return "sections/DefaultsSection.qml"
     case "apps.tmux": return "sections/TmuxSection.qml"
     case "apps.nvim": return "sections/NvimSection.qml"

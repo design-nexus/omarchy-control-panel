@@ -59,10 +59,21 @@ audio_output_sink() {
 audio_state() {
   command -v pactl >/dev/null 2>&1 || { echo '{"available": false}'; return; }
 
+  # A temporarily unavailable PipeWire/PulseAudio server must not make the
+  # entire Settings state payload invalid.  The window can render an empty
+  # audio list and will populate it on the next event instead.
+  local outputs inputs availability
+  outputs="$(audio_devices sinks)"
+  inputs="$(audio_devices sources)"
+  availability="$(audio_availability)"
+  [[ $outputs == \[* ]] || outputs='[]'
+  [[ $inputs == \[* ]] || inputs='[]'
+  [[ $availability == \{* ]] || availability='{}'
+
   jq -cn --arg resolved "$(audio_output_sink)" \
-    --argjson outputs "$(audio_devices sinks)" \
-    --argjson inputs "$(audio_devices sources)" \
-    --argjson availability "$(audio_availability)" \
+    --argjson outputs "$outputs" \
+    --argjson inputs "$inputs" \
+    --argjson availability "$availability" \
     --arg defaultOutput "$(capture pactl get-default-sink)" \
     --arg defaultInput "$(capture pactl get-default-source)" \
     '# What the selected output really sounds like, taken from the sink the
@@ -99,6 +110,41 @@ audio_watch() {
       done
 }
 
+# The preamp is deliberately separate from volume and calibration.  It only
+# changes the two linear nodes placed before the measured correction; the
+# limiter remains the final node in the generated chain.
+audio_preamp_db() {
+  local fragment="$HOME_DIR/.config/pipewire/omarchy-speaker-tuning.conf.d/90-tuning.conf"
+  [[ -f $fragment ]] || die "no calibrated speaker chain is installed"
+  python3 - "$fragment" "$1" <<'PY'
+import math, pathlib, re, sys
+path, raw = pathlib.Path(sys.argv[1]), sys.argv[2]
+try: value = int(raw)
+except ValueError: raise SystemExit("preamp must be an integer")
+if value < 0 or value > 36 or value % 3: raise SystemExit("preamp must be 0..36 dB in 3 dB steps")
+text = path.read_text()
+factor = f"{10 ** (value / 20):.6f}"
+text, left = re.subn(r'(name = preamp_l label = linear control = \{ "Mult" = )[^ ]+', r'\g<1>' + factor, text, count=1)
+text, right = re.subn(r'(name = preamp_r label = linear control = \{ "Mult" = )[^ ]+', r'\g<1>' + factor, text, count=1)
+if left != 1 or right != 1: raise SystemExit("calibrated chain has no compatible preamp")
+tmp = path.with_suffix(path.suffix + ".settings.tmp")
+tmp.write_text(text)
+tmp.replace(path)
+PY
+  systemctl --user restart omarchy-speaker-tuning.service >/dev/null 2>&1 || die "could not restart calibrated audio"
+}
+
+audio_preamp_state() {
+  local fragment="$HOME_DIR/.config/pipewire/omarchy-speaker-tuning.conf.d/90-tuning.conf" mult
+  [[ -f $fragment ]] || { echo null; return; }
+  mult=$(sed -n 's/.*name = preamp_l label = linear control = { "Mult" = \([0-9.]*\).*/\1/p' "$fragment" | head -1)
+  python3 - "$mult" <<'PY'
+import math, sys
+try: print(round(20 * math.log10(float(sys.argv[1]))))
+except Exception: print('null')
+PY
+}
+
 # Switching the default alone leaves whatever is already playing on the old
 # device, which reads as the setting not working. Move the streams too, the
 # way every audio panel does.
@@ -115,6 +161,7 @@ audio_move_streams() {
 
 audio_cmd() {
   local action=${1:-} kind=${2:-} value=${3:-}
+  if [[ $action == preamp ]]; then audio_preamp_db "$kind"; return; fi
   command -v pactl >/dev/null 2>&1 || die "PulseAudio is not available"
   [[ $action == state || $action == watch ]] || [[ $kind == output || $kind == input ]] || die "expected output or input"
 

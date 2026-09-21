@@ -8,6 +8,10 @@ import "../ui" as Ui
 // row reads, and the calls every control makes.
 Ui.SectionBody {
   property var app: null
+  readonly property var rogConfig: (app.asus || {}).config || ({})
+  readonly property var rogTouchpad: rogConfig.touchpad || ({})
+  readonly property var rogGestures: rogConfig.gestures || ({})
+  readonly property bool hasRogTouchpad: rogConfig.touchpad !== undefined
   Ui.SettingGroup {
 
     Ui.PercentRow {
@@ -49,6 +53,7 @@ Ui.SectionBody {
 
   Ui.SettingGroup {
     title: "Touchpad"
+    visible: !hasRogTouchpad
 
     Ui.SwitchRow {
       label: "Natural scrolling"
@@ -91,6 +96,52 @@ Ui.SectionBody {
       onResetRequested: app.resetSetting("scroll-factor")
     }
   }
+
+  // The G16 controller generates a device-specific Hyprland module.  Keep
+  // these in one group instead of showing the generic controls above as a
+  // second, conflicting set of touchpad settings.
+  Ui.SettingGroup {
+    title: "ROG G16 trackpad"
+    visible: hasRogTouchpad
+
+    Ui.SwitchRow { label: "Trackpad"; description: "Enable the built-in ASUP1207 touchpad."; checked: rogTouchpad.enabled !== false; onRequested: function(next) { app.run(["asus", "set", "touchpad.enabled", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Natural scrolling"; description: "Content follows your fingers."; checked: rogTouchpad.naturalScroll === true; onRequested: function(next) { app.run(["asus", "set", "touchpad.naturalScroll", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Tap to click"; description: "One-finger tap clicks; the map below controls two- and three-finger taps."; checked: rogTouchpad.tapToClick !== false; onRequested: function(next) { app.run(["asus", "set", "touchpad.tapToClick", next ? "true" : "false"]) } }
+    Ui.PickerRow {
+      label: "Two / three-finger taps"; value: String(rogTouchpad.tapMap || "lrm")
+      options: [{value:"lrm",label:"2 = right click, 3 = middle click"},{value:"lmr",label:"2 = middle click, 3 = right click"}]
+      onPicked: function(next) { app.run(["asus", "set", "touchpad.tapMap", next]) }
+    }
+    Ui.SwitchRow { label: "Clickfinger behavior"; description: "Physical two- and three-finger clicks become right and middle click."; checked: rogTouchpad.clickfinger !== false; onRequested: function(next) { app.run(["asus", "set", "touchpad.clickfinger", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Disable while typing"; description: "Prevents accidental palm movement."; checked: rogTouchpad.disableWhileTyping !== false; onRequested: function(next) { app.run(["asus", "set", "touchpad.disableWhileTyping", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Drag lock"; description: "Keep dragging after lifting your finger."; checked: rogTouchpad.dragLock === true; onRequested: function(next) { app.run(["asus", "set", "touchpad.dragLock", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Middle-button emulation"; description: "Press left and right buttons together for middle click."; checked: rogTouchpad.middleButtonEmulation === true; onRequested: function(next) { app.run(["asus", "set", "touchpad.middleButtonEmulation", next ? "true" : "false"]) } }
+    Ui.FactorRow { label: "Scroll speed"; value: Number(rogTouchpad.scrollFactor !== undefined ? rogTouchpad.scrollFactor : 0.4); minimum: 0.1; maximum: 2; onCommitted: function(next) { app.run(["asus", "set", "touchpad.scrollFactor", String(next)]) } }
+    Ui.FactorRow { label: "Pointer speed"; value: Number(rogTouchpad.sensitivity !== undefined ? rogTouchpad.sensitivity : 0); minimum: -1; maximum: 1; onCommitted: function(next) { app.run(["asus", "set", "touchpad.sensitivity", String(next)]) } }
+  }
+
+  Ui.SettingGroup {
+    title: "ROG G16 swipe gestures"
+    visible: hasRogTouchpad
+    Ui.ReadingRow { label: "Two fingers"; value: "Scrolling is reserved for normal two-finger movement." }
+    Ui.ReadingRow { label: "Four-finger taps"; value: "This touchpad does not emit four-finger taps; use the swipe actions below." }
+    Ui.PickerRow { label: "3 fingers · left / right"; value: String(rogGestures.threeHorizontal || "workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.threeHorizontal", next]) } }
+    Ui.PickerRow { label: "3 fingers · up"; value: String(rogGestures.threeUp || "launcher"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.threeUp", next]) } }
+    Ui.PickerRow { label: "3 fingers · down"; value: String(rogGestures.threeDown || "special-workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.threeDown", next]) } }
+    Ui.PickerRow { label: "4 fingers · left"; value: String(rogGestures.fourLeft || "previous-workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.fourLeft", next]) } }
+    Ui.PickerRow { label: "4 fingers · right"; value: String(rogGestures.fourRight || "next-workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.fourRight", next]) } }
+    Ui.PickerRow { label: "4 fingers · up"; value: String(rogGestures.fourUp || "fullscreen"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.fourUp", next]) } }
+    Ui.PickerRow { label: "4 fingers · down"; value: String(rogGestures.fourDown || "none"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.fourDown", next]) } }
+  }
+
+  readonly property var gestureOptions: [
+    {value:"none",label:"Disabled"}, {value:"workspace",label:"Workspace swipe"},
+    {value:"launcher",label:"App launcher"}, {value:"special-workspace",label:"Special workspace"},
+    {value:"previous-workspace",label:"Previous workspace"}, {value:"next-workspace",label:"Next workspace"},
+    {value:"focus-left",label:"Focus left"}, {value:"focus-right",label:"Focus right"},
+    {value:"fullscreen",label:"Toggle fullscreen"}, {value:"close-window",label:"Close window"},
+    {value:"play-pause",label:"Play / pause"}, {value:"screenshot",label:"Screenshot"}
+  ]
 
   // Every pointer that can depart from the settings above gets its own group,
   // so what a control writes is never in doubt: the ones under a device name

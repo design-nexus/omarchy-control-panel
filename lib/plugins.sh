@@ -39,14 +39,31 @@ write_update_cache() {
 }
 
 plugins_state() {
-  capture omarchy plugin list --json | jq -c '[.[] | {
+  local live manifests
+  live=$(capture omarchy plugin list --json | jq -c '[.[] | {
     id: .id,
     name: (.name // .id),
     kinds: (.kinds // []),
     enabled: (.enabled == true),
     firstParty: (.firstParty // .isFirstParty // false),
     description: (.description // "")
-  }]' 2>/dev/null || echo '[]'
+  }]' 2>/dev/null)
+  [[ $live == \[* ]] && { printf '%s\n' "$live"; return; }
+
+  # The shell command needs the running Quickshell instance.  Settings can be
+  # opened while it is restarting, however, and Bar must still be able to
+  # name and add the locally installed widgets in that short window.
+  manifests=$(find "$HOME_DIR/.config/omarchy/plugins" -mindepth 2 -maxdepth 2 \
+    -name manifest.json -type f -print0 2>/dev/null \
+    | xargs -0 -r jq -cs '[.[] | {
+        id: .id,
+        name: (.name // .id),
+        kinds: (.kinds // []),
+        enabled: true,
+        firstParty: false,
+        description: (.description // "")
+      }] | sort_by(.name | ascii_downcase)' 2>/dev/null)
+  [[ $manifests == \[* ]] && printf '%s\n' "$manifests" || echo '[]'
 }
 
 # Whether each installed plugin has commits waiting upstream. One line per

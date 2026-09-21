@@ -31,9 +31,10 @@ set -uo pipefail
 OMASETTINGS_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 # A detached update re-enters here, so this script has to be able to name
 # itself: it is started from the window's own copy, which is not on any PATH.
-OMASETTINGS_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+OMASETTINGS_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OMASETTINGS_BIN="$OMASETTINGS_BIN_DIR/$(basename "${BASH_SOURCE[0]}")"
 
-for module in core store hypr devices monitors workspaces shell_config compose plugins menu herdr tmux neovim bindings wifi bluetooth power audio setters state; do
+for module in core store hypr devices monitors workspaces shell_config compose plugins menu herdr tmux neovim bindings wifi bluetooth power audio asus calibration setters state; do
   # shellcheck source=/dev/null
   source "$OMASETTINGS_LIB/$module.sh"
 done
@@ -61,6 +62,8 @@ case ${1:-state} in
   bluetooth) shift; bluetooth_cmd "$@" ;;
   power) shift; power_cmd "$@" ;;
   audio) shift; audio_cmd "$@" ;;
+  asus) shift; asus_cmd "$@" ;;
+  calibration) shift; calibration_cmd "$@" ;;
   menu) shift; [[ ${1:-} == run ]] || die "usage: omasettings menu run <entry-id>"; menu_run "${2:-}" ;;
   *)
     cat >&2 <<'USAGE'
