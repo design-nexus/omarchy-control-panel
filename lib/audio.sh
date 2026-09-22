@@ -51,7 +51,14 @@ audio_devices() {
 # keyboard moves another and neither agrees with the OSD.
 audio_output_sink() {
   local sink
-  sink=$(capture omarchy-audio-output-sink)
+  sink=$(capture pactl get-default-sink)
+  # Resolve through the independent EQ and then through speaker calibration.
+  local next hop
+  for hop in 1 2 3; do
+    next=$(capture omarchy-audio-output-sink "$sink")
+    [[ -n $next && $next != "$sink" ]] || break
+    sink=$next
+  done
   [[ -n $sink ]] && printf '%s\n' "$sink" && return
   capture pactl get-default-sink
 }
@@ -62,24 +69,29 @@ audio_state() {
   # A temporarily unavailable PipeWire/PulseAudio server must not make the
   # entire Settings state payload invalid.  The window can render an empty
   # audio list and will populate it on the next event instead.
-  local outputs inputs availability
+  local outputs inputs availability effects calibration
   outputs="$(audio_devices sinks)"
   inputs="$(audio_devices sources)"
   availability="$(audio_availability)"
   [[ $outputs == \[* ]] || outputs='[]'
   [[ $inputs == \[* ]] || inputs='[]'
   [[ $availability == \{* ]] || availability='{}'
+  effects=$(audio_effects state)
+  [[ $effects == \{* ]] || effects='{}'
+  calibration=$(calibration_state)
 
   jq -cn --arg resolved "$(audio_output_sink)" \
     --argjson outputs "$outputs" \
     --argjson inputs "$inputs" \
     --argjson availability "$availability" \
+    --argjson effects "$effects" \
+    --argjson calibration "${calibration:-{\}}" \
     --arg defaultOutput "$(capture pactl get-default-sink)" \
     --arg defaultInput "$(capture pactl get-default-source)" \
     '# What the selected output really sounds like, taken from the sink the
      # keys move rather than from the DSP sink fronting it.
      ($outputs | map(select(.name == $resolved)) | first) as $real
-     | { available: true,
+     | { available: true, effects: $effects, preampDb: ($effects.preampDb // 0), calibration: $calibration,
        outputs: [$outputs[]
          | . + { default: (.name == $defaultOutput) }
          | if .default and $real != null and .name != $resolved
@@ -110,33 +122,18 @@ audio_watch() {
       done
 }
 
-# The preamp is deliberately separate from calibration.  It is a persistent
-# system gain offset applied to the current PipeWire/PulseAudio default sink;
-# calibration may be enabled, disabled, or replaced without changing it.
-PREAMP_FILE="$HOME_DIR/.config/omarchy/settings-preamp-db"
+# The preamp and nine EQ bands are real DSP controls, not offsets added to
+# master volume. Their state is included in both snapshots and live events.
 
 audio_preamp_db() {
-  local value=${1:-} old=0 delta delta_arg
-  [[ $value =~ ^[0-9]+$ ]] || die "preamp must be an integer"
-  (( value >= 0 && value <= 36 && value % 3 == 0 )) || die "preamp must be 0..36 dB in 3 dB steps"
-  [[ -f $PREAMP_FILE ]] && old=$(head -n1 "$PREAMP_FILE" 2>/dev/null)
-  [[ $old =~ ^[0-9]+$ ]] || old=0
-  delta=$((value - old))
-  if (( delta != 0 )); then
-    delta_arg="${delta}dB"
-    (( delta > 0 )) && delta_arg="+${delta}dB"
-    pactl set-sink-volume @DEFAULT_SINK@ "$delta_arg" >/dev/null 2>&1 \
-      || die "could not apply the global preamp"
-  fi
-  printf '%s\n' "$value" | write_file "$PREAMP_FILE" managed \
-    || die "could not save the global preamp"
+  audio_effects preamp "${1:-}"
 }
 
 audio_preamp_state() {
-  local value
-  value=$(head -n1 "$PREAMP_FILE" 2>/dev/null || true)
-  [[ $value =~ ^[0-9]+$ ]] && printf '%s\n' "$value" || printf '0\n'
+  audio_effects state | jq '.preampDb // 0'
 }
+
+audio_effects() { /usr/bin/python3 "$OMASETTINGS_BIN_DIR/audio-effects.py" "$@"; }
 
 # Switching the default alone leaves whatever is already playing on the old
 # device, which reads as the setting not working. Move the streams too, the
@@ -155,6 +152,7 @@ audio_move_streams() {
 audio_cmd() {
   local action=${1:-} kind=${2:-} value=${3:-}
   if [[ $action == preamp ]]; then audio_preamp_db "$kind"; return; fi
+  if [[ $action == effects ]]; then shift; audio_effects "$@"; return; fi
   command -v pactl >/dev/null 2>&1 || die "PulseAudio is not available"
   [[ $action == state || $action == watch ]] || [[ $kind == output || $kind == input ]] || die "expected output or input"
 
@@ -171,7 +169,15 @@ audio_cmd() {
     watch) audio_watch ;;
     default)
       [[ -n $value ]] || die "no device given"
+      if [[ $kind == output && $value == settings_audio_effects ]]; then
+        audio_effects activate
+        return
+      fi
       pactl "set-default-$device" "$value" >/dev/null 2>&1 || die "could not switch to that device"
+      if [[ $kind == output && $value != settings_audio_effects && -f $HOME_DIR/.config/omarchy/settings-audio-effects.json ]]; then
+        audio_effects activate || return
+        return
+      fi
       audio_move_streams "$kind" "$value" ;;
     volume)
       [[ $value =~ ^[0-9]+$ ]] || die "'$value' is not a percentage"

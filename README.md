@@ -1,9 +1,13 @@
 # Omarchy Control Panel
 
-One window for every Omarchy setting, from Hyprland to your keybindings to tmux.
+One organized home for everyday Omarchy and system settings, from Hyprland to
+hardware, networking, calibration, and applications.
 
 <p align="center"><img src="preview.png" alt="The OmaSettings window" width="800"></p>
 
+- **Six clear categories.** Appearance, Desktop & Input, Devices,
+  Connectivity, Power & System, and Applications keep the sidebar short while
+  putting related controls together.
 - **Find anything.** Type "blur" or "gaps" and every setting that touches it
   appears with its current value, whatever file it normally lives in.
 - **Look and feel.** Theme, font, text size, gaps, borders, rounding, opacity,
@@ -24,6 +28,17 @@ One window for every Omarchy setting, from Hyprland to your keybindings to tmux.
   real configs.
 - **The live stuff.** Audio, network, bluetooth and power, so those widgets can
   leave the bar, if you want more space for other widgets.
+- **The computer too.** Display brightness, battery charge limits,
+  notifications, system information, and entry points for updates, snapshots,
+  disks, printers, security, and advanced networking.
+- **Sound shaping.** Sound includes an independent preamp (-24 to +36 dB),
+  nine EQ bands (32 Hz–8 kHz, ±12 dB), bypass, and a flat reset. A persistent
+  PipeWire filter and peak limiter process the selected output. Controls are
+  read back from the running graph; master volume remains separate. Choose
+  "Use on this output" if another application changes the default output.
+- **One calibration home.** Speaker correction, comparison, verification, and
+  measurement now live together under Devices instead of being repeated on
+  the Sound page.
 - **Undo.** Anything you changed is marked and goes back, one setting or all of
   them at once.
 
@@ -92,6 +107,14 @@ applying the tmux option, and rolled back if it fails.
 
 Only `jq` is required. A page whose tool is missing says so instead of failing.
 Nothing here needs root, and nothing is installed on your behalf.
+
+The preamp/EQ uses PipeWire, `/usr/bin/python3`, and `lsp-plugins-lv2` (also
+used by speaker calibration). Its user service is `settings-audio-effects`.
+Settings are stored in `~/.config/omarchy/settings-audio-effects.json` and
+survive login. The obsolete volume-offset file `settings-preamp-db` is kept
+but is no longer applied; the replacement starts at 0 dB to avoid reapplying
+an unknown gain. Selecting a different output within Settings retargets the
+EQ; switching outside Settings is respected and shown as inactive.
 
 ## Remove
 

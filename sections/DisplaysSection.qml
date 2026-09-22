@@ -9,6 +9,18 @@ import "../ui" as Ui
 Ui.SectionBody {
   property var app: null
 
+  Ui.SettingGroup {
+    title: "Brightness"
+    visible: app.system.brightness !== null && app.system.brightness !== undefined
+
+    Ui.PercentRow {
+      label: "Display brightness"
+      description: "Brightness of the focused display."
+      value: Number(app.system.brightness) / 100
+      onCommitted: function(next) { app.run(["system", "brightness", String(Math.round(next * 100))]) }
+    }
+  }
+
   // A display you own is not always plugged in, and Hyprland matches its
   // monitor rules again every time it is: a display can be set up here before
   // the cable is in, and keeps what it was given.

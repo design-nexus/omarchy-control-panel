@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "design-nexus.settings",
   "name": "Settings",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "author": "Ken",
   "license": "MIT",
   "description": "Unified Omarchy, ASUS ROG, Aura lighting, and calibrated audio settings.",
-  "homepage": "https://github.com/twiking/omasettings",
+  "homepage": "https://github.com/design-nexus/omarchy-control-panel",
   "kinds": [
     "bar-widget",
     "service"

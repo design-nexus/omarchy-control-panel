@@ -68,6 +68,22 @@ Item {
   property bool loaded: false
   property bool busy: false
   property string lastError: ""
+  property bool uiStateLoaded: false
+
+  FileView {
+    id: uiStateFile
+    path: Quickshell.env("HOME") + "/.config/omarchy/omasettings-ui.json"
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      var saved = ""
+      try { saved = String(JSON.parse(text() || "{}").page || "") } catch (e) {}
+      root.uiStateLoaded = true
+      if (saved !== "" && root.pageFor(saved).title !== "") root.pageId = saved
+    }
+    onLoadFailed: root.uiStateLoaded = true
+  }
 
   readonly property var hypr: state.hypr !== undefined ? state.hypr : ({})
   readonly property var barState: state.bar !== undefined ? state.bar : ({})
@@ -87,11 +103,12 @@ Item {
   readonly property var audio: audioLive !== null ? audioLive
     : (state.audio !== undefined ? state.audio : ({}))
   readonly property var asus: state.asus !== undefined ? state.asus : ({})
+  readonly property var system: state.system !== undefined ? state.system : ({})
 
   Process {
     id: audioWatchProcess
-    command: ["bash", root.helperPath, "audio", "watch"]
-    running: root.shown && root.pageId === "audio"
+    // Short reads cannot leave subscribe pipelines behind when a page closes.
+    command: ["bash", root.helperPath, "audio", "state"]
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(line) {
@@ -106,6 +123,14 @@ Item {
     }
     // A stale live reading is worse than none: the page falls back to the
     // state document once nothing is watching.
+  }
+
+  Timer {
+    interval: 1500
+    repeat: true
+    triggeredOnStart: true
+    running: root.shown && (root.pageId === "audio" || root.pageId === "calibration")
+    onTriggered: if (!audioWatchProcess.running && !root.busy) audioWatchProcess.running = true
     onRunningChanged: if (!running) root.audioLive = null
   }
 
@@ -836,6 +861,7 @@ Item {
           for (var k in root.state) next[k] = root.state[k]
           for (var j in part) next[j] = part[j]
           root.state = next
+          if (part.audio !== undefined) root.audioLive = part.audio
           root.loaded = true
         } catch (e) {
           // The whole document is already on its way; it will say the same.
@@ -911,6 +937,7 @@ Item {
     navIndex = -1
     navRows = []
     bodyLoader.setSource(sectionSource(pageId), { app: root })
+    if (uiStateLoaded) uiStateFile.setText(JSON.stringify({ version: 1, page: pageId }, null, 2) + "\n")
   }
 
   // A page may say something truer about itself than its file path — what the
@@ -923,39 +950,42 @@ Item {
   // the network, which is where GNOME and macOS start — their top task is
   // getting online, and this window is opened to change how the desktop looks.
   readonly property var sections: [
-    // Look and feel
-    { id: "appearance", title: "Appearance", icon: "\uf1fc" },
-    { id: "bar", title: "Bar", icon: "\uf0ca" },
-    { id: "workspaces", title: "Workspaces", icon: "\uf24d" },
-    { id: "windows", title: "Windows", icon: "\uf2d0" },
-    { id: "layout", title: "Layout", icon: "\uf009" },
-    { id: "effects", title: "Effects", icon: "\uf0eb" },
-    { id: "groups", title: "Groups", icon: "\uf009" },
-
-    // Input
-    { id: "keyboard", title: "Keyboard", icon: "\uf11c" },
-    { id: "bindings", title: "Keybindings", icon: "\uf11c" },
-    { id: "compose", title: "Compose Keys", icon: "\uf031" },
-    { id: "pointer", title: "Mouse & Touchpad", icon: "\uf245" },
-
-    // Devices
-    { id: "displays", title: "Displays", icon: "\uf108" },
-    { id: "audio", title: "Audio", icon: "\uf028" },
-    { id: "calibration", title: "Speaker Calibration", icon: "\uf130" },
-    { id: "aura", title: "Aura Lighting", icon: "\uf0eb" },
-    { id: "asus", title: "ASUS ROG", icon: "\uf085" },
-    { id: "network", title: "Network", icon: "\uf1eb" },
-    { id: "bluetooth", title: "Bluetooth", icon: "\uf294" },
-    { id: "power", title: "Power", icon: "\uf0e7" },
-
-    // System
-    { id: "idle", title: "Idle & Lock", icon: "\uf023" },
-    { id: "datetime", title: "Date & Time", icon: "\uf017" },
-
-    // What extends it
-    { id: "plugins", title: "Plugins", icon: "\uf1e6" },
-    { id: "apps", title: "Applications", icon: "\uf085", children: [
-      { id: "apps.defaults", title: "Defaults" },
+    { id: "category.appearance", title: "Appearance", icon: "\uf1fc", children: [
+      { id: "appearance", title: "Theme & Wallpaper" },
+      { id: "bar", title: "Bar & Widgets" },
+      { id: "effects", title: "Visual Effects" }
+    ] },
+    { id: "category.desktop", title: "Desktop & Input", icon: "\uf108", children: [
+      { id: "windows", title: "Windows" },
+      { id: "layout", title: "Layout" },
+      { id: "groups", title: "Window Groups" },
+      { id: "workspaces", title: "Workspaces & Rules" },
+      { id: "keyboard", title: "Keyboard" },
+      { id: "bindings", title: "Shortcuts" },
+      { id: "compose", title: "Compose Keys" },
+      { id: "pointer", title: "Mouse & Touchpad" }
+    ] },
+    { id: "category.devices", title: "Devices", icon: "\uf2db", children: [
+      { id: "displays", title: "Displays" },
+      { id: "audio", title: "Sound" },
+      { id: "calibration", title: "Speaker Calibration" },
+      { id: "aura", title: "Lighting" },
+      { id: "asus", title: "ASUS Hardware" }
+    ] },
+    { id: "category.connectivity", title: "Connectivity", icon: "\uf1eb", children: [
+      { id: "network", title: "Network" },
+      { id: "bluetooth", title: "Bluetooth" }
+    ] },
+    { id: "category.system", title: "Power & System", icon: "\uf013", children: [
+      { id: "power", title: "Power & Battery" },
+      { id: "idle", title: "Idle & Lock" },
+      { id: "notifications", title: "Notifications" },
+      { id: "datetime", title: "Date & Time" },
+      { id: "system", title: "System & Maintenance" }
+    ] },
+    { id: "category.apps", title: "Applications", icon: "\uf085", children: [
+      { id: "apps.defaults", title: "Default Apps" },
+      { id: "plugins", title: "Plugins" },
       { id: "apps.herdr", title: "Herdr" },
       { id: "apps.tmux", title: "Tmux" },
       { id: "apps.nvim", title: "Neovim" }
@@ -1052,6 +1082,8 @@ Item {
     case "plugins": return "sections/PluginsSection.qml"
     case "compose": return "sections/ComposeSection.qml"
     case "datetime": return "sections/DateTimeSection.qml"
+    case "notifications": return "sections/NotificationsSection.qml"
+    case "system": return "sections/SystemSection.qml"
     case "network": return "sections/NetworkSection.qml"
     case "bluetooth": return "sections/BluetoothSection.qml"
     case "layout": return "sections/LayoutSection.qml"
@@ -1260,7 +1292,7 @@ Item {
               Layout.bottomMargin: Style.space(10)
 
               Text {
-                text: "OmaSettings"
+                text: "Settings"
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.heading

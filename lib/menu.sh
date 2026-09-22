@@ -242,6 +242,12 @@ search_index() {
   while IFS=$'\t' read -r page file; do
     [[ -n $page && -f $dir/sections/$file ]] || continue
     awk -v page="$page" '
+      function emit_inline_label(line, group,    label) {
+        if (!match(line, /label:[ \t]*"[^"]*"/)) return
+        label = substr(line, RSTART, RLENGTH)
+        sub(/^label:[ \t]*"/, "", label); sub(/"$/, "", label)
+        if (label != "") print page "\t" group "\t" label "\t"
+      }
       # A group heading gives a row context a search can match on: "blur" finds
       # the settings under Blur even when the word is not in their own labels.
       /^[ \t]*title: "/ {
@@ -260,6 +266,7 @@ search_index() {
         desc = ""
         next
       }
+      /Ui\.[A-Za-z]+Row[ \t]*\{.*label:[ \t]*"/ && $0 !~ /^[ \t]*label: "/ { emit_inline_label($0, group); next }
       /^[ \t]*description: "/ {
         if (label == "" || desc != "") next
         line = $0

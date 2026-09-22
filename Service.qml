@@ -30,10 +30,23 @@ Scope {
   property int savedBrightness: -1
   property bool backlightTimedOut: false
 
-  Process {
-    id: timeoutReader
-    command: ["sh", "-c", "jq -r '.backlightTimeout // 30' \"$HOME/.config/omarchy/asus-g16/settings.json\" 2>/dev/null || echo 30"]
-    stdout: SplitParser { onRead: function(line) { var n = Number(String(line).trim()); if (n >= 0 && n <= 600) root.backlightTimeoutSeconds = n } }
+  function applyBacklightSettings(contents) {
+    try {
+      var parsed = JSON.parse(contents || "{}")
+      var seconds = Number(parsed.backlightTimeout !== undefined ? parsed.backlightTimeout : 30)
+      if (seconds >= 0 && seconds <= 600) root.backlightTimeoutSeconds = seconds
+    } catch (e) {
+      root.backlightTimeoutSeconds = 30
+    }
+  }
+
+  FileView {
+    id: backlightSettingsFile
+    path: Quickshell.env("HOME") + "/.config/omarchy/asus-g16/settings.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyBacklightSettings(text())
+    onFileChanged: reload()
   }
 
   function turnBacklightOff() { if (!backlightRead.running && !backlightTimedOut) backlightRead.running = true }
@@ -66,8 +79,6 @@ Scope {
   }
   Process { id: backlightOff; command: ["brightnessctl", "-d", "asus::kbd_backlight", "set", "0"] }
   Process { id: backlightRestore; command: ["brightnessctl", "-d", "asus::kbd_backlight", "set", "1"] }
-  Component.onCompleted: timeoutReader.running = true
-
   property string omarchyPath: ""
   property var shell: null
   property var manifest: null

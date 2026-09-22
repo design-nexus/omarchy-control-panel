@@ -133,7 +133,7 @@ state_slice() {
     wifi) jq -cn --argjson v "$(wifi_state)" '{ wifi: $v }' ;;
     bluetooth) jq -cn --argjson v "$(bluetooth_state)" '{ bluetooth: $v }' ;;
     power) jq -cn --argjson v "$(power_state)" '{ power: $v }' ;;
-    audio) jq -cn --argjson v "$(audio_state)" --argjson c "$(calibration_state)" --argjson p "$(audio_preamp_state)" '{ audio: ($v + {calibration:$c, preampDb:$p}) }' ;;
+    audio) jq -cn --argjson v "$(audio_state)" '{ audio: $v }' ;;
     asus) jq -cn --argjson v "$(asus_state)" '{ asus: $v }' ;;
     groups) jq -cn \
       --argjson browser "$(menu_group_state setup.default.browser)" \
@@ -179,7 +179,7 @@ state() {
   # Named slices answer on their own; with nothing named, the whole document.
   if (( $# > 0 )); then state_slices "$@"; return; fi
 
-  local cfg themes fonts theme font nightlight hypr hyprchanged searchindex monitors compose plugins pluginupdates selfupdate agents groups iconfonts datetime herdr textscale workspaces asus
+  local cfg themes fonts theme font nightlight hypr hyprchanged searchindex monitors compose plugins pluginupdates selfupdate agents groups iconfonts datetime herdr textscale workspaces asus system
   cfg=$(read_shell_json)
 
   # Before the block, both of them: this is the one part of a state read that
@@ -219,8 +219,8 @@ state() {
   par_run bluetooth bluetooth_state
   par_run power power_state
   par_run audio audio_state
-  par_run calibration calibration_state
   par_run asus asus_state
+  par_run system system_info_state
   # The half of the search index that comes from the section sources. The
   # other half is the state itself, and is put together once it is all in.
   par_run searchsources search_index
@@ -257,8 +257,9 @@ state() {
   wifi=$(par_get wifi '{}')
   bluetooth=$(par_get bluetooth '{}')
   power=$(par_get power '{}')
-  audio=$(jq -cn --argjson audio "$(par_get audio '{}')" --argjson calibration "$(par_get calibration '{}')" --argjson preamp "$(audio_preamp_state)" '$audio + {calibration:$calibration,preampDb:$preamp}')
+  audio=$(par_get audio '{}')
   asus=$(par_get asus '{}')
+  system=$(par_get system '{}')
   local searchsources
   searchsources=$(par_get searchsources '{}')
   par_end
@@ -319,6 +320,7 @@ state() {
     --argjson power "${power:-{\}}" \
     --argjson audio "${audio:-{\}}" \
     --argjson asus "${asus:-{\}}" \
+    --argjson system "${system:-{\}}" \
     --arg textScale "${textscale:-1}" \
     '{
       theme: $theme,
@@ -356,6 +358,7 @@ state() {
       power: $power,
       audio: $audio,
       asus: $asus,
+      system: $system,
       iconFonts: $iconFonts
     }'
 }

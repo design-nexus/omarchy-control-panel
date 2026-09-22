@@ -7,6 +7,17 @@ Ui.SectionBody {
   property var app: null
   readonly property var asus: app.asus || ({})
   readonly property var armoury: asus.armoury || ({})
+  readonly property var asusPower: asus.power || ({})
+  Ui.SettingGroup {
+    title: "Laptop performance"
+    note: "Controls the ASUS platform profile. Power & Battery separately controls the OS power profile."
+    Ui.ChoiceRow {
+      label: "Platform profile"
+      value: String(asusPower.profile || "Balanced")
+      options: (asusPower.profiles || []).map(function(profile) { return { value: String(profile), label: String(profile) } })
+      onPicked: function(next) { app.run(["asus", "set-profile", next]) }
+    }
+  }
   Ui.SettingGroup {
     title: "Firmware"
     Ui.SwitchRow { visible: (armoury.bootSound || {}).supported === true; label: "Boot sound"; checked: (armoury.bootSound || {}).value === true; onRequested: function(next) { app.run(["asus", "set-armoury", "boot_sound", next ? "1" : "0"]) } }

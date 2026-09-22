@@ -91,11 +91,11 @@ ensure_settings() {
   fi
 
   local merged tmp
-  tmp=$(mktemp "$STATE_DIR/settings.XXXXXX")
   merged=$(jq -s '.[0] * .[1]' <(defaults) "$SETTINGS") || {
-    rm -f "$tmp"
     die "settings file is not valid JSON: $SETTINGS"
   }
+  jq -e --argjson merged "$merged" '. == $merged' "$SETTINGS" >/dev/null 2>&1 && return
+  tmp=$(mktemp "$STATE_DIR/settings.XXXXXX")
   printf '%s\n' "$merged" >"$tmp"
   chmod 600 "$tmp"
   mv "$tmp" "$SETTINGS"

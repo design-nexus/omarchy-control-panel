@@ -63,12 +63,13 @@ Ui.SectionBody {
   }
   Ui.SettingGroup {
     title: "Slash lighting"
-    Ui.TextRow { label: "Slash color"; description: "RGB hex color stored with the Slash lighting profile."; value: String(slash.color || "7c3aed"); placeholder: "RRGGBB"; onCommitted: function(next) { app.run(["asus", "set-slash", "color", page.hex(next)]) } }
     Ui.SwitchRow { label: "Slash LED"; checked: slash.enabled !== false; onRequested: function(next) { app.run(["asus", "set-slash", "enabled", next ? "true" : "false"]) } }
-    Ui.NumberRow { label: "Brightness"; value: Number(slash.brightness || 100); from: 0; to: 100; step: 10; suffix: "%"; onCommitted: function(next) { app.run(["asus", "set-slash", "brightness", String(next)]) } }
-    Ui.NumberRow { label: "Animation interval"; value: Number(slash.interval || 2); from: 0; to: 5; step: 1; onCommitted: function(next) { app.run(["asus", "set-slash", "interval", String(next)]) } }
+    Ui.NumberRow { label: "Brightness"; value: Number(slash.brightness !== undefined ? slash.brightness : 255); from: 0; to: 255; step: 16; onCommitted: function(next) { app.run(["asus", "set-slash", "brightness", String(next)]) } }
+    Ui.NumberRow { label: "Animation interval"; value: Number(slash.interval !== undefined ? slash.interval : 0); from: 0; to: 5; step: 1; onCommitted: function(next) { app.run(["asus", "set-slash", "interval", String(next)]) } }
     Ui.SwitchRow { label: "Show on boot"; checked: slash.showOnBoot !== false; onRequested: function(next) { app.run(["asus", "set-slash", "showOnBoot", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Show on shutdown"; checked: slash.showOnShutdown !== false; onRequested: function(next) { app.run(["asus", "set-slash", "showOnShutdown", next ? "true" : "false"]) } }
     Ui.SwitchRow { label: "Show on sleep"; checked: slash.showOnSleep !== false; onRequested: function(next) { app.run(["asus", "set-slash", "showOnSleep", next ? "true" : "false"]) } }
     Ui.SwitchRow { label: "Allow on battery"; checked: slash.showOnBattery !== false; onRequested: function(next) { app.run(["asus", "set-slash", "showOnBattery", next ? "true" : "false"]) } }
+    Ui.SwitchRow { label: "Low battery warning"; checked: slash.showBatteryWarning !== false; onRequested: function(next) { app.run(["asus", "set-slash", "showBatteryWarning", next ? "true" : "false"]) } }
   }
 }

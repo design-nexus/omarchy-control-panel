@@ -34,7 +34,7 @@ OMASETTINGS_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)"
 OMASETTINGS_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OMASETTINGS_BIN="$OMASETTINGS_BIN_DIR/$(basename "${BASH_SOURCE[0]}")"
 
-for module in core store hypr devices monitors workspaces shell_config compose plugins menu herdr tmux neovim bindings wifi bluetooth power audio asus calibration setters state; do
+for module in core store hypr devices monitors workspaces shell_config compose plugins menu herdr tmux neovim bindings wifi bluetooth power audio asus calibration system setters state; do
   # shellcheck source=/dev/null
   source "$OMASETTINGS_LIB/$module.sh"
 done
@@ -64,6 +64,7 @@ case ${1:-state} in
   audio) shift; audio_cmd "$@" ;;
   asus) shift; asus_cmd "$@" ;;
   calibration) shift; calibration_cmd "$@" ;;
+  system) shift; system_cmd "$@" ;;
   menu) shift; [[ ${1:-} == run ]] || die "usage: omasettings menu run <entry-id>"; menu_run "${2:-}" ;;
   *)
     cat >&2 <<'USAGE'

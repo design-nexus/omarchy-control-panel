@@ -10,6 +10,7 @@ Ui.SectionBody {
 
   readonly property var power: app.power
   readonly property var reading: power.battery !== undefined ? power.battery : ({})
+  readonly property var asusPower: ((app.asus || {}).power || {})
 
   // Power profiles are named for machines, not people.
   function profileOptions() {
@@ -52,7 +53,23 @@ Ui.SectionBody {
   }
 
   Ui.SettingGroup {
-    title: "Profile"
+    title: "Battery care"
+    visible: asusPower.chargeLimit !== null && asusPower.chargeLimit !== undefined
+
+    Ui.NumberRow {
+      label: "Charging limit"
+      description: "Stop charging at this level to reduce long-term battery wear."
+      value: Number(asusPower.chargeLimit)
+      from: 20
+      to: 100
+      step: 5
+      suffix: "%"
+      onCommitted: function(next) { app.run(["asus", "set-charge-limit", String(next)]) }
+    }
+  }
+
+  Ui.SettingGroup {
+    title: "Power profile"
     note: "Remembered per power source and applied when you plug in or unplug."
 
     Ui.ChoiceRow {

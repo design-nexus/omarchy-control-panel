@@ -9,7 +9,7 @@ Ui.SectionBody {
   property var app: null
 
   readonly property var audio: app.audio
-  readonly property var calibration: audio.calibration || ({})
+  readonly property var effects: audio.effects || ({})
   readonly property var outputs: audio.outputs !== undefined ? audio.outputs : []
   readonly property var inputs: audio.inputs !== undefined ? audio.inputs : []
 
@@ -33,87 +33,6 @@ Ui.SectionBody {
 
   readonly property var currentOutput: selected(outputs)
   readonly property var currentInput: selected(inputs)
-
-  Ui.SettingGroup {
-    title: "Calibrated speakers"
-    visible: calibration.available !== false
-    Ui.NumberRow {
-      label: "Preamp boost"
-      description: "Gain before the protected calibration and final limiter; it does not change master volume or the measured EQ."
-      value: audio.preampDb !== undefined && audio.preampDb !== null ? Number(audio.preampDb) : 18; from: 0; to: 36; step: 3; suffix: "dB"
-      onCommitted: function(next) { app.run(["audio", "preamp", String(next)]) }
-    }
-    Ui.ReadingRow {
-      label: "Calibration"
-      value: calibration.profile
-        ? "Measured " + String(calibration.profile.created_at || "profile")
-        : "No profile installed"
-    }
-    Ui.ActionRow {
-      label: "Calibrated output"
-      description: "Route playback through the measured correction and safety limiter."
-      buttonText: "Use calibrated"
-      enabled: calibration.profile !== null && calibration.profile !== undefined
-      onTriggered: app.run(["calibration", "use-calibrated-output"])
-    }
-    Ui.SwitchRow {
-      label: "Bypass correction"
-      description: "Temporarily hear the same output without the measured EQ."
-      checked: calibration.bypass === true
-      enabled: calibration.profile !== null && calibration.profile !== undefined
-      onRequested: function(next) { app.run(["calibration", "bypass-toggle"]) }
-    }
-    Ui.ActionRow {
-      label: "Compare profiles"
-      description: "Switch between the current and previous measured profiles at matched loudness."
-      buttonText: "Compare"
-      enabled: (calibration.compare || {}).available === true
-      onTriggered: app.run(["calibration", "compare-toggle"])
-    }
-    Ui.SwitchRow {
-      label: "Loudness compensation"
-      description: "Adjusts tonal balance at lower listening levels while preserving safe output headroom."
-      checked: calibration.loudnessCompensation === "on"
-      enabled: calibration.profile !== null && calibration.profile !== undefined
-      onRequested: function(next) { app.run(["calibration", "loudness-toggle"]) }
-    }
-    Ui.SwitchRow {
-      label: "Deep bass"
-      description: calibration.bassEnhancer && calibration.bassEnhancer.usable === true
-        ? "Adds harmonic bass enhancement without driving the speakers below their protected range."
-        : "Install the optional Deep Bass add-on from the calibration plugin before enabling."
-      checked: calibration.deepBass === "on"
-      enabled: calibration.bassEnhancer && calibration.bassEnhancer.usable === true
-      onRequested: function(next) { app.run(["calibration", "deep-bass-toggle"]) }
-    }
-    Ui.ActionRow {
-      label: "Check calibration"
-      description: "Plays verification sweeps and reports whether the installed correction still matches its measurement."
-      buttonText: "Check"
-      enabled: calibration.profile !== null && calibration.profile !== undefined
-      onTriggered: app.run(["calibration", "verify-json"])
-    }
-    Ui.ActionRow {
-      label: "Recalibrate current setup"
-      description: "Measures the same speaker and microphone used by the active profile, then installs the new protected correction."
-      buttonText: "Recalibrate"
-      enabled: calibration.profile !== null && calibration.profile !== undefined
-      onTriggered: {
-        var p = calibration.profile
-        app.run(["calibration", "calibrate-json", "--sink", String((p.speaker || {}).name),
-          "--mic", String((p.microphone || {}).name), "--channel", String((p.microphone || {}).channel || "0"),
-          "--voicing", String(p.voicing || "neutral"), "--loudness", String(p.loudness || "protected"),
-          "--bass", String(p.bass || "normal"), "--channel-trim", String(p.channel_trim || "off"), "--install"])
-      }
-    }
-    Ui.ActionRow {
-      label: "Disable calibration"
-      description: "Restores playback to the physical output. Your saved profile is kept."
-      buttonText: "Disable"
-      enabled: calibration.profile !== null && calibration.profile !== undefined
-      onTriggered: app.run(["calibration", "disable"])
-    }
-  }
 
   Ui.SettingGroup {
     title: "Output"
@@ -141,6 +60,55 @@ Ui.SectionBody {
         selected: modelData.default === true
         onPicked: app.run(["audio", "default", "output", modelData.name])
       }
+    }
+  }
+
+  Ui.SettingGroup {
+    title: "Preamp & 9-band equalizer"
+    note: effects.active === true
+      ? "Processing the selected output. A limiter controls peaks; master volume stays separate."
+      : "Choose Use on this output to route playback through the preamp and equalizer."
+
+    Ui.ActionRow {
+      label: "Use on this output"
+      description: effects.active === true ? "Active" : "Audio effects are currently outside the playback path."
+      buttonText: "Use"
+      enabled: effects.available === true && effects.active !== true
+      onTriggered: app.run(["audio", "effects", "activate"])
+    }
+    Ui.SwitchRow {
+      label: "Enable preamp and EQ"
+      checked: effects.enabled !== false
+      enabled: effects.available === true
+      onRequested: function(next) { app.run(["audio", "effects", "enabled", next ? "true" : "false"]) }
+    }
+    Ui.NumberRow {
+      label: "Preamp boost"
+      description: "Independent gain before the EQ. At high boost the limiter may prevent further loudness increases."
+      value: Number(effects.preampDb || 0)
+      from: -24; to: 36; step: 1; suffix: "dB"
+      enabled: effects.available === true && effects.enabled !== false
+      onCommitted: function(next) { app.run(["audio", "preamp", String(next)]) }
+    }
+    Repeater {
+      model: [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000]
+      delegate: Ui.NumberRow {
+        required property int index
+        required property int modelData
+        label: modelData < 1000 ? modelData + " Hz" : (modelData / 1000) + " kHz"
+        description: "Equalizer band"
+        value: Number((effects.gains || [])[index] || 0)
+        from: -12; to: 12; step: 1; suffix: "dB"
+        enabled: effects.available === true && effects.enabled !== false
+        onCommitted: function(next) { app.run(["audio", "effects", "eq", String(index), String(next)]) }
+      }
+    }
+    Ui.ActionRow {
+      label: "Reset preamp and EQ"
+      description: "Return the preamp and all nine bands to 0 dB."
+      buttonText: "Reset"
+      enabled: effects.available === true
+      onTriggered: app.run(["audio", "effects", "reset"])
     }
   }
 
