@@ -153,6 +153,19 @@ audio_cmd() {
   local action=${1:-} kind=${2:-} value=${3:-}
   if [[ $action == preamp ]]; then audio_preamp_db "$kind"; return; fi
   if [[ $action == effects ]]; then shift; audio_effects "$@"; return; fi
+  if [[ $action == restart || $action == restart-wireplumber ]]; then
+    systemctl --user restart wireplumber
+    if command -v asus-audio-sync >/dev/null 2>&1; then
+      asus-audio-sync apply >/dev/null 2>&1 || true
+    elif [[ -x "$HOME_DIR/.local/bin/asus-audio-sync" ]]; then
+      "$HOME_DIR/.local/bin/asus-audio-sync" apply >/dev/null 2>&1 || true
+    fi
+    if [[ -f $HOME_DIR/.config/omarchy/settings-audio-effects.json ]]; then
+      sleep 1
+      audio_effects activate >/dev/null 2>&1 || true
+    fi
+    return
+  fi
   command -v pactl >/dev/null 2>&1 || die "PulseAudio is not available"
   [[ $action == state || $action == watch ]] || [[ $kind == output || $kind == input ]] || die "expected output or input"
 

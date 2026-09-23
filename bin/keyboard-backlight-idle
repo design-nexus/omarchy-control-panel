@@ -1,0 +1,77 @@
+#!/bin/bash
+set -euo pipefail
+
+DEVICE="asus::kbd_backlight"
+SYSFS_DIR="/sys/class/leds/$DEVICE"
+[[ -d "$SYSFS_DIR" ]] || exit 0
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+TARGET_FILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-kbd-backlight-target"
+LEVEL_FILE="$STATE_DIR/kbd_backlight_level"
+BRIGHTNESSCTL_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/brightnessctl/leds"
+
+mkdir -p "$STATE_DIR" "$(dirname "$TARGET_FILE")" "$BRIGHTNESSCTL_DIR"
+
+action="${1:-restore}"
+
+case "$action" in
+  off)
+    echo "off" > "$TARGET_FILE"
+
+    # Read current brightness
+    cur=$(cat "$SYSFS_DIR/brightness" 2>/dev/null || true)
+    if [[ -n "$cur" && "$cur" =~ ^[0-9]+$ && "$cur" -gt 0 ]]; then
+      # Save the active brightness level
+      echo "$cur" > "$LEVEL_FILE"
+      echo "$cur" > "$BRIGHTNESSCTL_DIR/$DEVICE"
+    fi
+
+    # Check if target is still "off" before modifying hardware
+    target=$(cat "$TARGET_FILE" 2>/dev/null || true)
+    if [[ "$target" == "off" ]]; then
+      brightnessctl -d "$DEVICE" set 0 >/dev/null 2>&1 || true
+    fi
+    ;;
+
+  restore)
+    echo "on" > "$TARGET_FILE"
+
+    # Determine level to restore
+    saved=""
+    if [[ -f "$LEVEL_FILE" ]]; then
+      saved=$(cat "$LEVEL_FILE" 2>/dev/null || true)
+    fi
+    if [[ -z "$saved" || ! "$saved" =~ ^[0-9]+$ || "$saved" -le 0 ]]; then
+      if [[ -f "$BRIGHTNESSCTL_DIR/$DEVICE" ]]; then
+        saved=$(cat "$BRIGHTNESSCTL_DIR/$DEVICE" 2>/dev/null || true)
+      fi
+    fi
+    if [[ -z "$saved" || ! "$saved" =~ ^[0-9]+$ || "$saved" -le 0 ]]; then
+      saved=1
+    fi
+
+    # Always ensure brightnessctl cache has non-zero level
+    echo "$saved" > "$BRIGHTNESSCTL_DIR/$DEVICE"
+
+    cur=$(cat "$SYSFS_DIR/brightness" 2>/dev/null || true)
+    if [[ "$cur" == "0" ]]; then
+      brightnessctl -d "$DEVICE" set "$saved" >/dev/null 2>&1 || true
+    elif [[ -n "$cur" && "$cur" =~ ^[0-9]+$ && "$cur" -gt 0 ]]; then
+      # Update saved level if user actively has it at a different level (e.g. 2 or 3)
+      echo "$cur" > "$LEVEL_FILE"
+      echo "$cur" > "$BRIGHTNESSCTL_DIR/$DEVICE"
+    fi
+    ;;
+
+  status)
+    cur=$(cat "$SYSFS_DIR/brightness" 2>/dev/null || echo "unknown")
+    saved=$(cat "$LEVEL_FILE" 2>/dev/null || echo "none")
+    target=$(cat "$TARGET_FILE" 2>/dev/null || echo "none")
+    echo "current: $cur, saved: $saved, target: $target"
+    ;;
+
+  *)
+    echo "Usage: $0 {off|restore|status}" >&2
+    exit 1
+    ;;
+esac

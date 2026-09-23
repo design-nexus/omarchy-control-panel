@@ -28,7 +28,8 @@ hardware, networking, calibration, and applications.
   real configs.
 - **The live stuff.** Audio, network, bluetooth and power, so those widgets can
   leave the bar, if you want more space for other widgets.
-- **The computer too.** Display brightness, battery charge limits,
+- **The computer too.** Display brightness (including optional automatic
+  brightness for the internal laptop panel), battery charge limits,
   notifications, system information, and entry points for updates, snapshots,
   disks, printers, security, and advanced networking.
 - **Sound shaping.** Sound includes an independent preamp (-24 to +36 dB),
@@ -39,8 +40,8 @@ hardware, networking, calibration, and applications.
 - **One calibration home.** Speaker correction, comparison, verification, and
   measurement now live together under Devices instead of being repeated on
   the Sound page.
-- **Undo.** Anything you changed is marked and goes back, one setting or all of
-  them at once.
+- **Restore overrides.** Settings-managed overrides are marked and can be
+  restored to their prior values, one at a time or all at once.
 
 ## Why I built it
 
@@ -104,9 +105,16 @@ applying the tmux option, and rolled back if it fails.
 | `timedatectl`                | Date & Time                                           |
 | `tmux`, `nvim`, `herdr`      | Their own pages under Applications                    |
 | `xkbcli`                     | Checking a keyboard layout compiles before writing it |
+| `v4l2-ctl`, `ffmpeg`          | Optional camera fallback for automatic brightness     |
 
 Only `jq` is required. A page whose tool is missing says so instead of failing.
 Nothing here needs root, and nothing is installed on your behalf.
+
+Automatic brightness is off by default. It controls only the built-in laptop
+panel. When no native IIO/HID ambient-light sensor is available, it takes a
+low-resolution in-memory reading from the built-in RGB camera roughly once per
+30 seconds. That briefly activates the camera indicator; no image is saved or
+shown. `v4l2-ctl` and `ffmpeg` are only needed for this camera fallback.
 
 The preamp/EQ uses PipeWire, `/usr/bin/python3`, and `lsp-plugins-lv2` (also
 used by speaker calibration). Its user service is `settings-audio-effects`.

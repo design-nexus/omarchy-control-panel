@@ -139,4 +139,15 @@ Ui.SectionBody {
       }
     }
   }
+
+  Ui.SettingGroup {
+    title: "Troubleshooting"
+
+    Ui.ActionRow {
+      label: "Restart audio service"
+      description: "Restart WirePlumber to redetect sound devices if audio drops or only dummy output shows."
+      buttonText: "Restart"
+      onTriggered: app.run(["audio", "restart"])
+    }
+  }
 }

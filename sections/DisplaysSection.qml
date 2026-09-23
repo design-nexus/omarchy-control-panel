@@ -8,16 +8,83 @@ import "../ui" as Ui
 // row reads, and the calls every control makes.
 Ui.SectionBody {
   property var app: null
+  readonly property var automatic: (app.system && app.system.autoBrightness) || ({})
+
+  // This is intentionally a small state slice: it updates the reading while
+  // the page is visible without repeatedly asking about network, audio, etc.
+  Timer {
+    interval: 5000
+    running: app && app.pageId === "displays"
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: app.refreshSlices(["system"])
+  }
 
   Ui.SettingGroup {
     title: "Brightness"
     visible: app.system.brightness !== null && app.system.brightness !== undefined
 
+    Ui.SwitchRow {
+      label: "Automatic brightness"
+      description: "Uses an ambient-light sensor when available; otherwise briefly uses the built-in camera every 30 seconds. No images are retained."
+      checked: automatic.enabled === true
+      onRequested: function(next) { app.run(["system", "auto-brightness", "enabled", next ? "on" : "off"]) }
+    }
+
+    Ui.NumberRow {
+      label: "Brightness preference"
+      description: "Make automatic brightness dimmer or brighter."
+      from: -30
+      to: 30
+      suffix: "%"
+      value: Number(automatic.bias || 0)
+      enabled: automatic.enabled === true
+      onCommitted: function(next) { app.run(["system", "auto-brightness", "bias", String(next)]) }
+    }
+
+    Ui.ReadingRow {
+      label: "Automatic source"
+      visible: automatic.enabled === true
+      value: sourceLabel()
+    }
+    Ui.ReadingRow {
+      label: "Estimated light"
+      visible: automatic.enabled === true && automatic.lightLevel !== null && automatic.lightLevel !== undefined
+      value: Math.round(Number(automatic.lightLevel)) + (automatic.source === "sensor" ? " lux" : " / 255")
+    }
+    Ui.ReadingRow {
+      label: "Target brightness"
+      visible: automatic.enabled === true && automatic.targetBrightness !== null && automatic.targetBrightness !== undefined
+      value: Math.round(Number(automatic.targetBrightness)) + "%"
+    }
+    Ui.ReadingRow {
+      label: "Last reading"
+      visible: automatic.enabled === true
+      value: lastReading()
+    }
+    Ui.ReadingRow {
+      label: "Automatic status"
+      visible: automatic.enabled === true && automatic.status && automatic.status !== "active"
+      value: String(automatic.status || "waiting")
+    }
+
     Ui.PercentRow {
       label: "Display brightness"
-      description: "Brightness of the focused display."
+      description: automatic.enabled === true ? "Controlled automatically for the built-in display." : "Brightness of the focused display."
       value: Number(app.system.brightness) / 100
+      enabled: automatic.enabled !== true
       onCommitted: function(next) { app.run(["system", "brightness", String(Math.round(next * 100))]) }
+    }
+
+    function sourceLabel() {
+      if (automatic.source === "sensor") return "Native ambient-light sensor"
+      if (automatic.source === "camera") return "Built-in RGB camera"
+      return automatic.available === false ? "Unavailable" : "Waiting for a reading"
+    }
+    function lastReading() {
+      if (!automatic.lastSampleAt) return "Waiting for first reading"
+      var date = new Date(Number(automatic.lastSampleAt) * 1000)
+      return date.toLocaleTimeString()
     }
   }
 

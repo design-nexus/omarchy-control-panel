@@ -803,6 +803,7 @@ Item {
       case "calibration": return ["audio"]
       case "asus": return ["asus"]
       case "power": return ["power"]
+      case "system": return ["system"]
       case "set": return slicesForKey(args.length > 1 ? args[1] : "")
     }
     return []
@@ -830,6 +831,7 @@ Item {
     if (name === "font") return ["font", "hyprChanged"]
     if (name === "text-scale") return ["textScale", "hyprChanged"]
     if (name === "nightlight") return ["nightlight"]
+    if (name === "auto-brightness") return ["system"]
     // A theme moves more than it is asked to — colours, fonts, the bar — so
     // it is left to the whole read rather than guessed at in parts.
     if (name === "theme") return []
@@ -1160,9 +1162,9 @@ Item {
       anchors.fill: parent
       z: 100
       message: root.changedSettings.length === 1
-        ? "Reset the one setting changed from this window?"
-        : "Reset all " + root.changedSettings.length + " settings changed from this window?"
-      confirmText: "Reset all"
+        ? "Restore this Settings override to its previous value?"
+        : "Restore all " + root.changedSettings.length + " Settings overrides to their previous values?"
+      confirmText: "Restore all"
       cancelText: "Cancel"
       background: root.background
       foreground: root.foreground
@@ -1455,7 +1457,7 @@ Item {
 
               Text {
                 text: root.changedSettings.length === 1
-                  ? "1 setting changed" : root.changedSettings.length + " settings changed"
+                  ? "1 Settings override" : root.changedSettings.length + " Settings overrides"
                 color: root.muted
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -1465,7 +1467,7 @@ Item {
               // rather than a place to go, and it should look like the other
               // things that do something.
               Button {
-                text: "Reset all settings"
+                text: "Restore previous settings"
                 bordered: true
                 foreground: root.foreground
                 accent: root.accent

@@ -135,6 +135,7 @@ state_slice() {
     power) jq -cn --argjson v "$(power_state)" '{ power: $v }' ;;
     audio) jq -cn --argjson v "$(audio_state)" '{ audio: $v }' ;;
     asus) jq -cn --argjson v "$(asus_state)" '{ asus: $v }' ;;
+    system) jq -cn --argjson v "$(system_info_state)" '{ system: $v }' ;;
     groups) jq -cn \
       --argjson browser "$(menu_group_state setup.default.browser)" \
       --argjson terminal "$(menu_group_state setup.default.terminal)" \

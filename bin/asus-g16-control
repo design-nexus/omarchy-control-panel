@@ -39,6 +39,7 @@ defaults() {
     },
     gestures: {
       threeHorizontal: "workspace",
+      threeHorizontalReverse: false,
       threeUp: "launcher",
       threeDown: "special-workspace",
       fourLeft: "previous-workspace",
@@ -126,6 +127,9 @@ validate_setting() {
       ;;
     touchpad.tapMap)
       [[ $value == lrm || $value == lmr ]] || die "tap map must be lrm or lmr"
+      ;;
+    gestures.threeHorizontalReverse)
+      [[ $value == true || $value == false ]] || die "$path expects true or false"
       ;;
     gestures.*)
       case "$value" in
@@ -276,10 +280,19 @@ emit_gesture() {
       # This setup exposes numbered workspaces 1..5. Use the controller so the
       # gesture can wrap at either end instead of creating workspace 0 or 6.
       if [[ $direction == horizontal ]]; then
-        printf -v command '%q workspace-cycle previous' "$CONTROL_PATH"
+        local reverse left_action right_action
+        reverse=$(jq -r '.gestures.threeHorizontalReverse // false' "$SETTINGS")
+        if [[ $reverse == true ]]; then
+          left_action=next
+          right_action=previous
+        else
+          left_action=previous
+          right_action=next
+        fi
+        printf -v command '%q workspace-cycle %s' "$CONTROL_PATH" "$left_action"
         printf 'hl.gesture({ fingers = %s, direction = "left", action = function() hl.exec_cmd(%s) end })\n' \
           "$fingers" "$(jq -Rn --arg s "$command" '$s')"
-        printf -v command '%q workspace-cycle next' "$CONTROL_PATH"
+        printf -v command '%q workspace-cycle %s' "$CONTROL_PATH" "$right_action"
         printf 'hl.gesture({ fingers = %s, direction = "right", action = function() hl.exec_cmd(%s) end })\n' \
           "$fingers" "$(jq -Rn --arg s "$command" '$s')"
       else

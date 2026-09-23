@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "design-nexus.settings",
   "name": "Settings",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "author": "Ken",
   "license": "MIT",
   "description": "Unified Omarchy, ASUS ROG, Aura lighting, and calibrated audio settings.",

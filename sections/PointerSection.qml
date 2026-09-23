@@ -126,6 +126,13 @@ Ui.SectionBody {
     Ui.ReadingRow { label: "Two fingers"; value: "Scrolling is reserved for normal two-finger movement." }
     Ui.ReadingRow { label: "Four-finger taps"; value: "This touchpad does not emit four-finger taps; use the swipe actions below." }
     Ui.PickerRow { label: "3 fingers · left / right"; value: String(rogGestures.threeHorizontal || "workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.threeHorizontal", next]) } }
+    Ui.SwitchRow {
+      visible: !searchHidden && (rogGestures.threeHorizontal || "workspace") === "workspace"
+      label: "Reverse swipe direction"
+      description: "Swipe left switches to the next workspace, right to previous."
+      checked: rogGestures.threeHorizontalReverse === true
+      onRequested: function(next) { app.run(["asus", "set", "gestures.threeHorizontalReverse", next ? "true" : "false"]) }
+    }
     Ui.PickerRow { label: "3 fingers · up"; value: String(rogGestures.threeUp || "launcher"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.threeUp", next]) } }
     Ui.PickerRow { label: "3 fingers · down"; value: String(rogGestures.threeDown || "special-workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.threeDown", next]) } }
     Ui.PickerRow { label: "4 fingers · left"; value: String(rogGestures.fourLeft || "previous-workspace"); options: gestureOptions; onPicked: function(next) { app.run(["asus", "set", "gestures.fourLeft", next]) } }

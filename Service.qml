@@ -27,14 +27,20 @@ Scope {
   // one active controller and reads the same durable ASUS preferences used by
   // its Aura page.
   property int backlightTimeoutSeconds: 30
-  property int savedBrightness: -1
   property bool backlightTimedOut: false
+
+  readonly property string backlightControlScript: (root.manifest && root.manifest.__sourceDir ? root.manifest.__sourceDir : Quickshell.env("HOME") + "/.config/omarchy/plugins/design-nexus.settings") + "/bin/keyboard-backlight-idle"
 
   function applyBacklightSettings(contents) {
     try {
       var parsed = JSON.parse(contents || "{}")
       var seconds = Number(parsed.backlightTimeout !== undefined ? parsed.backlightTimeout : 30)
-      if (seconds >= 0 && seconds <= 600) root.backlightTimeoutSeconds = seconds
+      if (seconds >= 0 && seconds <= 600) {
+        root.backlightTimeoutSeconds = seconds
+        if (seconds === 0 && root.backlightTimedOut) {
+          root.restoreBacklight()
+        }
+      }
     } catch (e) {
       root.backlightTimeoutSeconds = 30
     }
@@ -49,15 +55,16 @@ Scope {
     onFileChanged: reload()
   }
 
-  function turnBacklightOff() { if (!backlightRead.running && !backlightTimedOut) backlightRead.running = true }
+  function turnBacklightOff() {
+    if (backlightTimedOut || !keyboardIdle.isIdle || backlightTimeoutSeconds <= 0) return
+    backlightTimedOut = true
+    Quickshell.execDetached([backlightControlScript, "off"])
+  }
+
   function restoreBacklight() {
     if (!backlightTimedOut) return
-    if (savedBrightness > 0 && !backlightRestore.running) {
-      backlightRestore.command = ["brightnessctl", "-d", "asus::kbd_backlight", "set", String(savedBrightness)]
-      backlightRestore.running = true
-    }
     backlightTimedOut = false
-    savedBrightness = -1
+    Quickshell.execDetached([backlightControlScript, "restore"])
   }
 
   // Wayland idle objects require an Item parent; the plugin service itself is
@@ -68,20 +75,44 @@ Scope {
       id: keyboardIdle
       timeout: root.backlightTimeoutSeconds
       respectInhibitors: false
-      onIsIdleChanged: { if (isIdle && root.backlightTimeoutSeconds > 0) root.turnBacklightOff(); else root.restoreBacklight() }
+      onIsIdleChanged: {
+        if (isIdle && root.backlightTimeoutSeconds > 0) root.turnBacklightOff()
+        else root.restoreBacklight()
+      }
     }
   }
-  Process {
-    id: backlightRead
-    command: ["brightnessctl", "-d", "asus::kbd_backlight", "get"]
-    stdout: SplitParser { onRead: function(line) { var n = Number(String(line).trim()); if (n > 0 && n <= 3) root.savedBrightness = n } }
-    onExited: function() { if (root.savedBrightness > 0) { root.backlightTimedOut = true; backlightOff.running = true } }
+
+  // Quickshell freezes during suspend; detect the wall-clock gap so a
+  // level turned off before sleep is restored immediately upon wake.
+  Timer {
+    id: resumeMonitor
+    interval: 1000
+    repeat: true
+    running: true
+    property double lastTick: Date.now()
+    onTriggered: {
+      var now = Date.now()
+      var resumed = now - lastTick > interval + 5000
+      lastTick = now
+      if (resumed && root.backlightTimedOut) {
+        root.restoreBacklight()
+      }
+    }
   }
-  Process { id: backlightOff; command: ["brightnessctl", "-d", "asus::kbd_backlight", "set", "0"] }
-  Process { id: backlightRestore; command: ["brightnessctl", "-d", "asus::kbd_backlight", "set", "1"] }
   property string omarchyPath: ""
   property var shell: null
   property var manifest: null
+
+  // The controller itself sleeps while disabled. Keeping this one process
+  // alive means a shell restart does not lose the 30-second cadence or state.
+  Process {
+    id: autoBrightnessController
+    command: {
+      var dir = root.manifest && root.manifest.__sourceDir
+      return dir ? ["python3", dir + "/bin/auto-brightness.py", "run"] : []
+    }
+    running: root.manifest !== null
+  }
 
   // ---------------- window lifecycle ---------------------------------------
   //
