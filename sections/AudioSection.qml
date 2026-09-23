@@ -90,18 +90,10 @@ Ui.SectionBody {
       enabled: effects.available === true && effects.enabled !== false
       onCommitted: function(next) { app.run(["audio", "preamp", String(next)]) }
     }
-    Repeater {
-      model: [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000]
-      delegate: Ui.NumberRow {
-        required property int index
-        required property int modelData
-        label: modelData < 1000 ? modelData + " Hz" : (modelData / 1000) + " kHz"
-        description: "Equalizer band"
-        value: Number((effects.gains || [])[index] || 0)
-        from: -12; to: 12; step: 1; suffix: "dB"
-        enabled: effects.available === true && effects.enabled !== false
-        onCommitted: function(next) { app.run(["audio", "effects", "eq", String(index), String(next)]) }
-      }
+    Ui.EqualizerBox {
+      label: "Graphic equalizer"
+      app: root.app
+      effects: root.effects
     }
     Ui.ActionRow {
       label: "Reset preamp and EQ"

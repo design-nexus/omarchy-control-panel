@@ -236,6 +236,8 @@ def main():
             if sys.argv[2] not in ('true', 'false'):
                 raise ValueError('Expected true or false')
             data['enabled'] = sys.argv[2] == 'true'
+        elif action == 'flat':
+            data['gains'] = [0] * 9
         elif action == 'reset':
             data['gains'] = [0] * 9
             data['preampDb'] = 0
