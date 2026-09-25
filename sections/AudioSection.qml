@@ -6,6 +6,7 @@ import "../ui" as Ui
 // Injected by the window when the page is loaded: the state every
 // row reads, and the calls every control makes.
 Ui.SectionBody {
+  id: sectionBody
   property var app: null
 
   readonly property var audio: app.audio
@@ -92,8 +93,8 @@ Ui.SectionBody {
     }
     Ui.EqualizerBox {
       label: "Graphic equalizer"
-      app: root.app
-      effects: root.effects
+      app: sectionBody.app
+      effects: sectionBody.effects
     }
     Ui.ActionRow {
       label: "Reset preamp and EQ"

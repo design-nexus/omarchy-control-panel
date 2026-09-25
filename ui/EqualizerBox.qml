@@ -10,13 +10,15 @@ Item {
   property var effects: ({})
   property string label: "Graphic equalizer"
 
+  readonly property int smallFontSize: Math.max(9, Math.round(Style.font.caption * 0.85))
+
   readonly property var frequencies: [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000]
   readonly property var frequencyLabels: ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k"]
   readonly property var frequencyUnits: ["Hz", "Hz", "Hz", "Hz", "Hz", "kHz", "kHz", "kHz", "kHz"]
 
-  readonly property var gains: effects.gains !== undefined && effects.gains !== null
+  readonly property var gains: (effects && effects.gains !== undefined && effects.gains !== null)
     ? effects.gains : [0, 0, 0, 0, 0, 0, 0, 0, 0]
-  readonly property bool isEnabled: effects.available === true && effects.enabled !== false
+  readonly property bool isEnabled: effects && effects.available === true && effects.enabled !== false
 
   // Local state for smooth interaction while dragging
   property var liveGains: [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -32,6 +34,7 @@ Item {
     liveGains = next
   }
 
+  onEffectsChanged: syncGains()
   onGainsChanged: syncGains()
   Component.onCompleted: syncGains()
 
@@ -108,7 +111,7 @@ Item {
           Text {
             text: "9 bands · ±12 dB range · Double-click to zero"
             font.family: Local.Palette.fontFamily
-            font.pixelSize: Style.font.tiny
+            font.pixelSize: root.smallFontSize
             color: Local.Palette.muted
           }
         }
@@ -162,37 +165,36 @@ Item {
           id: scaleCol
           width: Style.space(34)
           anchors.left: parent.left
-          anchors.top: slidersRow.top
-          anchors.topMargin: slidersRow.topLabelHeight
-          height: eqArea.trackHeight
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
 
           Text {
-            anchors.top: parent.top
+            y: Math.round(slidersRow.topLabelHeight + (eqArea.knobHeight / 2) - height / 2)
             anchors.right: parent.right
             anchors.rightMargin: Style.space(6)
             text: "+12"
             font.family: Local.Palette.fontFamily
-            font.pixelSize: Style.font.tiny
+            font.pixelSize: root.smallFontSize
             color: Local.Palette.muted
           }
 
           Text {
-            anchors.verticalCenter: parent.verticalCenter
+            y: Math.round(slidersRow.topLabelHeight + (eqArea.trackHeight / 2) - height / 2)
             anchors.right: parent.right
             anchors.rightMargin: Style.space(6)
             text: "0"
             font.family: Local.Palette.fontFamily
-            font.pixelSize: Style.font.tiny
+            font.pixelSize: root.smallFontSize
             color: Local.Palette.muted
           }
 
           Text {
-            anchors.bottom: parent.bottom
+            y: Math.round(slidersRow.topLabelHeight + eqArea.trackHeight - (eqArea.knobHeight / 2) - height / 2)
             anchors.right: parent.right
             anchors.rightMargin: Style.space(6)
             text: "-12"
             font.family: Local.Palette.fontFamily
-            font.pixelSize: Style.font.tiny
+            font.pixelSize: root.smallFontSize
             color: Local.Palette.muted
           }
         }
@@ -201,7 +203,7 @@ Item {
         Rectangle {
           anchors.left: scaleCol.right
           anchors.right: parent.right
-          y: slidersRow.topLabelHeight + (eqArea.knobHeight / 2)
+          y: Math.round(slidersRow.topLabelHeight + (eqArea.knobHeight / 2))
           height: 1
           color: Local.Palette.hairline
           opacity: 0.3
@@ -211,7 +213,7 @@ Item {
         Rectangle {
           anchors.left: scaleCol.right
           anchors.right: parent.right
-          y: slidersRow.topLabelHeight + (eqArea.trackHeight / 2)
+          y: Math.round(slidersRow.topLabelHeight + (eqArea.trackHeight / 2))
           height: 1
           color: Local.Palette.hairline
           opacity: 0.75
@@ -221,7 +223,7 @@ Item {
         Rectangle {
           anchors.left: scaleCol.right
           anchors.right: parent.right
-          y: slidersRow.topLabelHeight + eqArea.trackHeight - (eqArea.knobHeight / 2)
+          y: Math.round(slidersRow.topLabelHeight + eqArea.trackHeight - (eqArea.knobHeight / 2))
           height: 1
           color: Local.Palette.hairline
           opacity: 0.3
@@ -371,7 +373,7 @@ Item {
                   anchors.horizontalCenter: parent.horizontalCenter
                   text: root.frequencyUnits[index]
                   font.family: Local.Palette.fontFamily
-                  font.pixelSize: Style.font.tiny
+                  font.pixelSize: root.smallFontSize
                   color: Local.Palette.muted
                 }
               }
@@ -383,11 +385,12 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
+                preventStealing: root.draggingBand === bandItem.index
 
                 function calcGainFromY(my) {
-                  var trackY = my - slidersRow.topLabelHeight
-                  var clamped = Math.max(0, Math.min(eqArea.usableHeight, trackY - (eqArea.knobHeight / 2)))
-                  var p = 1.0 - (clamped / eqArea.usableHeight)
+                  var minY = slidersRow.topLabelHeight + (eqArea.knobHeight / 2)
+                  var clampedY = Math.max(minY, Math.min(minY + eqArea.usableHeight, my))
+                  var p = 1.0 - ((clampedY - minY) / eqArea.usableHeight)
                   var g = -12 + (p * 24)
                   if (Math.abs(g) < 0.5) g = 0
                   return Math.max(-12, Math.min(12, Math.round(g)))
